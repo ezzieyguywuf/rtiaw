@@ -1,7 +1,9 @@
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <queue>
 #include <string>
+#include <thread>
 #include <vector>
 
 // The maximum value for a given color channel
@@ -24,15 +26,32 @@ void write_pixel(std::ostream& out, const Color& color) {
   out << color.red << ' ' << color.green << ' ' << color.blue << '\n';
 }
 
-// Logs the data in the fifo to std::cout, using ANSI escape sequences to reuse
-// the same area of the terminal rather than scrolling
-void log(const std::vector<std::string>& data) {
-  std::cout << "logging...\n";
-  for (const std::string& d : data) {
-    std::cout << d << '\n';
-  }
-  std::cout << "...logged\n";
-}
+class Logger {
+  public:
+    Logger(std::size_t rows = 10) : rows_(rows) {
+      std::cout << std::string(rows_, '\n') << std::flush;
+    }
+
+    // Logs the data std::cout, using ANSI escape sequences to reuse the same
+    // area of the terminal rather than scrolling
+    void log(const std::vector<std::string>& data) {
+      // Move cursor up by rows_
+      std::cout << "\033[" << rows_ << "A";
+      for (const std::string& d : data) {
+        std::cout << d << '\n';
+      }
+
+      if (data.size() < rows_) {
+        std::cout << std::string ( rows_ - data.size(), '\n' );
+      }
+
+      std::cout << std::flush;
+    }
+
+
+  private:
+    std::size_t rows_;
+};
 
 // A very rudimentary "queue" - when the vector reaches the target size, the
 // first element will be removed, everything will be shifted "up", and finally
@@ -51,12 +70,15 @@ void push(
 }
 
 int main () {
+  // TODO: get rid of this
+  using namespace std::chrono_literals;
   const int width = 5;
   const int height = 5;
+  const std::size_t log_rows = 4;
 
   std::vector<std::string> log_data;
   std::queue<std::string, std::vector<std::string>> log_queue(log_data);
-
+  Logger logger(log_rows);
 
   std::ofstream outfile("test.ppm", std::ios::out);
   init_ppm(outfile, width, height);
@@ -72,8 +94,9 @@ int main () {
       write_pixel(outfile, color);
 
       std::string data = "Row: " + std::to_string(j) + ", Col: " + std::to_string(i);
-      push(log_data, data, 4);
-      log(log_data);
+      push(log_data, data, log_rows);
+      logger.log(log_data);
+      std::this_thread::sleep_for(200ms);
     }
   }
 }
