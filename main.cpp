@@ -32,7 +32,9 @@ int main () {
     for (int i = 0; i < width; ++i) {
       Color color;
 
-      color.red = CMAX - i;
+      color.red = i;
+      color.green = CMAX - j;
+
       write_pixel(outfile, color);
     }
   }
