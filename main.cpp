@@ -1,7 +1,6 @@
 #include <fstream>
 
-// The maximum value for a given color
-// TODO: find the right terminology for this - sub-pixel?
+// The maximum value for a given color channel
 constexpr int CMAX = 255;
 
 // Initialize a "Portable Pixmap" file in "P3" mode, i.e. ASCII input with full
@@ -34,6 +33,7 @@ int main () {
 
       color.red = i;
       color.green = CMAX - j;
+      color.blue = 255 / 4;
 
       write_pixel(outfile, color);
     }
