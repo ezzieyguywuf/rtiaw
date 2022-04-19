@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <queue>
@@ -19,6 +20,12 @@ struct Color {
   int red = 0;
   int green = 0; 
   int blue = 0;
+};
+
+struct Vector {
+  float dx;
+  float dy;
+  float dz;
 };
 
 // Every pixel will be on its own line
@@ -69,13 +76,52 @@ void push(
   data[n - 1] = item;
 }
 
-int main () {
-  // TODO: get rid of this
-  using namespace std::chrono_literals;
-  const int width = 5;
-  const int height = 5;
-  const std::size_t log_rows = 4;
+// The linear interpolation of t between a and b
+float lerp(float a, float b, float t) {
+  // TODO: see if C++20 does any optimizations for this
+  return a + t * (b - a);
+}
 
+float vector_length(const Vector& vec) {
+  return std::sqrt(vec.dx * vec.dx + vec.dy * vec.dy + vec.dz * vec.dz);
+}
+
+// TODO: would a cache help here? e.g. memoization
+Color ray_color(const Vector& vec) {
+  // 0 < t < 1
+  float t = vec.dy / vector_length(vec);
+
+  int red = CMAX * lerp(0.5, 1.0, t);
+  int green = CMAX * lerp(0.7, 1.0, t);
+  int blue = CMAX;
+
+  return Color{red, green, blue};
+}
+
+int main () {
+  // image
+  float aspect_ratio = 16.0 / 9.0;
+  const int height = 600;
+  const int width = height * aspect_ratio;
+
+  // Camera
+  //
+  // Our viewport is scaled down to 0 < y < 4
+  // x is fixed by the apsect ratio, which is width / height, or x / y
+  // therefor, 0 < x < 4 * 16 / 9
+  // or approx. 0 < x < 7.11
+  // 
+  // x is positive to the right
+  // y is positive down
+  //
+  // Top-left of the screen is x = 0, y = 0
+  // bottom-right of the screen is x = width, y = height
+  // positive Z is into the screen
+  float viewport_height = 4.0;
+  float viewport_width = viewport_height * aspect_ratio;
+  float focal_length = 1.0;
+
+  const std::size_t log_rows = 4;
   std::vector<std::string> log_data;
   std::queue<std::string, std::vector<std::string>> log_queue(log_data);
   Logger logger(log_rows);
@@ -83,20 +129,22 @@ int main () {
   std::ofstream outfile("test.ppm", std::ios::out);
   init_ppm(outfile, width, height);
 
+  // i and j represent one pixel each along the +x and +y axes, respectively.
   for (int j = 0; j < height; ++j) {
     for (int i = 0; i < width; ++i) {
-      Color color;
+      float x = lerp(0, viewport_width, i / float(width));
+      float y = lerp(0, viewport_height, j / float(height));
+      float z = focal_length;
 
-      color.red = i;
-      color.green = CMAX - j;
-      color.blue = 255 / 4;
+      Vector ray{x, y, z};
+
+      Color color = ray_color(ray);
 
       write_pixel(outfile, color);
 
-      std::string data = "Row: " + std::to_string(j) + ", Col: " + std::to_string(i);
-      push(log_data, data, log_rows);
-      logger.log(log_data);
-      std::this_thread::sleep_for(200ms);
+      /* std::string data = "Row: " + std::to_string(j) + ", Col: " + std::to_string(i); */
+      /* push(log_data, data, log_rows); */
     }
+    /* logger.log(log_data); */
   }
 }
