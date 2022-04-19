@@ -23,10 +23,18 @@ struct Color {
 };
 
 struct Vector {
-  float dx;
-  float dy;
-  float dz;
+  double dx;
+  double dy;
+  double dz;
+
+  Vector operator*(int val) const {
+    return {dx * val, dy * val, dz * val};
+  }
 };
+
+Vector operator* (int val, const Vector& vec) {
+  return vec * val;
+}
 
 // Every pixel will be on its own line
 void write_pixel(std::ostream& out, const Color& color) {
@@ -77,19 +85,66 @@ void push(
 }
 
 // The linear interpolation of t between a and b
-float lerp(float a, float b, float t) {
+double lerp(double a, double b, double t) {
   // TODO: see if C++20 does any optimizations for this
   return a + t * (b - a);
 }
 
-float vector_length(const Vector& vec) {
+double vector_length(const Vector& vec) {
   return std::sqrt(vec.dx * vec.dx + vec.dy * vec.dy + vec.dz * vec.dz);
 }
 
+double dot(const Vector& u, const Vector& v) {
+  return u.dx * v.dx + u.dy * v.dy + u.dz * v.dz;
+}
+
+struct Sphere {
+  Vector center;
+  double radius;
+};
+
+struct Ray {
+  Vector origin;
+  Vector direction;
+};
+
+// General equation for a sphere: (x - Cx)² + (y - Cy)² + (z - Cz)² = r²
+// in vector form, C = {Cx, Cy, Cz}, P = {x, y, z}, so (P - C) · (P - C) = r²
+//
+// This can be solved using the quadratic formula but we don't need a solution -
+// we only need to know the number of roots. As described on wikipedia (or via
+// intuition), we can determine the number of roots based on the "discriminant",
+// or the part inside the square root:
+//
+//   discriminant > 0, 2 roots (hit)
+//   discriminant = 0, 1 root (hit) - +/- 0 yields a single root
+//   discriminant < 0, 0 root (miss) - this would be a negative square root
+//
+//   discriminant = b² - 4·a·c
+//
+// We need to expand P to P = A + t·B, which is our equation for our ray.
+//   A = origin of ray
+//   B = direction of ray
+//
+// (P - C) · (P - C) = (A + t·B - C) · (A + t·B - C)
+//                   = (B·B)t² - 2(B·(A - C))t + ((A-C)·(A-C) - r²) = 0
+bool hit_sphere(const Ray& ray, const Sphere& sphere) {
+  // (A - C) in equations above
+  Vector ca{ray.origin.dx - sphere.center.dx,
+            ray.origin.dy - sphere.center.dy,
+            ray.origin.dz - sphere.center.dz};
+  double a = dot(ray.direction, ray.direction);
+  double b = 2 * dot(ca, ray.direction);
+  double c = dot(ca, ca) - (sphere.radius * sphere.radius);
+
+  return b*b - 4*a*c > 0;
+}
+
 // TODO: would a cache help here? e.g. memoization
-Color ray_color(const Vector& vec) {
+// TODO: add origin (for moving the camera later)
+Color ray_color(const Ray& ray) {
   // 0 < t < 1
-  float t = vec.dy / vector_length(vec);
+  double t = ray.direction.dy / vector_length(ray.direction);
 
   int red = CMAX * lerp(0.5, 1.0, t);
   int green = CMAX * lerp(0.7, 1.0, t);
@@ -100,7 +155,7 @@ Color ray_color(const Vector& vec) {
 
 int main () {
   // image
-  float aspect_ratio = 16.0 / 9.0;
+  double aspect_ratio = 16.0 / 9.0;
   const int height = 600;
   const int width = height * aspect_ratio;
 
@@ -117,9 +172,9 @@ int main () {
   // Top-left of the screen is x = 0, y = 0
   // bottom-right of the screen is x = width, y = height
   // positive Z is into the screen
-  float viewport_height = 4.0;
-  float viewport_width = viewport_height * aspect_ratio;
-  float focal_length = 1.0;
+  double viewport_height = 4.0;
+  double viewport_width = viewport_height * aspect_ratio;
+  double focal_length = 1.0;
 
   const std::size_t log_rows = 4;
   std::vector<std::string> log_data;
@@ -129,18 +184,23 @@ int main () {
   std::ofstream outfile("test.ppm", std::ios::out);
   init_ppm(outfile, width, height);
 
+  Sphere sphere{Vector{viewport_width/2.0, viewport_height/2.0, focal_length}, 0.5};
+
   // i and j represent one pixel each along the +x and +y axes, respectively.
   for (int j = 0; j < height; ++j) {
     for (int i = 0; i < width; ++i) {
-      float x = lerp(0, viewport_width, i / float(width));
-      float y = lerp(0, viewport_height, j / float(height));
-      float z = focal_length;
+      double x = lerp(0, viewport_width, i / double(width));
+      double y = lerp(0, viewport_height, j / double(height));
+      double z = focal_length;
 
-      Vector ray{x, y, z};
+      Ray ray{/*origin=*/{0,0,0}, /*direction=*/{x, y, z}};
 
-      Color color = ray_color(ray);
-
-      write_pixel(outfile, color);
+      if (hit_sphere(ray, sphere)) {
+        write_pixel(outfile, {CMAX, 0, 0});
+      } else {
+        Color color = ray_color(ray);
+        write_pixel(outfile, color);
+      }
 
       /* std::string data = "Row: " + std::to_string(j) + ", Col: " + std::to_string(i); */
       /* push(log_data, data, log_rows); */
