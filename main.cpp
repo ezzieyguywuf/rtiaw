@@ -21,8 +21,10 @@ void init_ppm(std::ostream& out, int width, int height) {
 
 struct Color {
   int red = 0;
-  int green = 0; 
+  int green = 0;
   int blue = 0;
+
+  Color(double r, double g, double b) : red(CMAX * r), green(CMAX * g), blue(CMAX * b) {}
 };
 
 struct Vector {
@@ -30,8 +32,20 @@ struct Vector {
   double dy;
   double dz;
 
-  Vector operator*(int val) const {
+  Vector operator*(double val) const {
     return {dx * val, dy * val, dz * val};
+  }
+
+  Vector operator/(double val) const {
+    return {dx / val, dy / val, dz / val};
+  }
+
+  Vector operator+(const Vector& other) const {
+    return {dx + other.dx, dy + other.dy, dz + other.dz};
+  }
+
+  Vector operator-(const Vector& other) const {
+    return {dx - other.dx, dy - other.dy, dz - other.dz};
   }
 };
 
@@ -41,8 +55,12 @@ std::ostream& operator<<(std::ostream& out, const Vector& vec) {
 }
 
 
-Vector operator* (int val, const Vector& vec) {
+Vector operator* (double val, const Vector& vec) {
   return vec * val;
+}
+
+Vector operator/ (double val, const Vector& vec) {
+  return vec / val;
 }
 
 // Every pixel will be on its own line
@@ -107,6 +125,10 @@ double dot(const Vector& u, const Vector& v) {
   return u.dx * v.dx + u.dy * v.dy + u.dz * v.dz;
 }
 
+Vector unit_vector(const Vector& vec) {
+  return vec / vector_length(vec);
+}
+
 struct Sphere {
   Vector center;
   double radius;
@@ -115,10 +137,14 @@ struct Sphere {
 struct Ray {
   Vector origin;
   Vector direction;
+
+  Vector at(double t) {
+    return origin + t * direction;
+  }
 };
 
 std::ostream& operator<<(std::ostream& out, const Ray& ray) {
-  out << "Ray{origin: " << ray.origin << ", " 
+  out << "Ray{origin: " << ray.origin << ", "
       <<     "direction:" << ray.direction << "}";
   return out;
 }
@@ -126,16 +152,7 @@ std::ostream& operator<<(std::ostream& out, const Ray& ray) {
 // General equation for a sphere: (x - Cx)² + (y - Cy)² + (z - Cz)² = r²
 // in vector form, C = {Cx, Cy, Cz}, P = {x, y, z}, so (P - C) · (P - C) = r²
 //
-// This can be solved using the quadratic formula but we don't need a solution -
-// we only need to know the number of roots. As described on wikipedia (or via
-// intuition), we can determine the number of roots based on the "discriminant",
-// or the part inside the square root:
-//
-//   discriminant > 0, 2 roots (hit)
-//   discriminant = 0, 1 root (hit) - +/- 0 yields a single root
-//   discriminant < 0, 0 root (miss) - this would be a negative square root
-//
-//   discriminant = b² - 4·a·c
+// This can be solved using the quadratic formula.
 //
 // We need to expand P to P = A + t·B, which is our equation for our ray.
 //   A = origin of ray
@@ -143,13 +160,13 @@ std::ostream& operator<<(std::ostream& out, const Ray& ray) {
 //
 // (P - C) · (P - C) = (A + t·B - C) · (A + t·B - C)
 //                   = (B·B)t² - 2(B·(A - C))t + ((A-C)·(A-C) - r²) = 0
-bool hit_sphere(const Ray& ray, const Sphere& sphere, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
+//
+// returns the positive solution if it exists, -1 otherwise
+double hit_sphere(const Ray& ray, const Sphere& sphere, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
   // (A - C) in equations above
-  Vector ca{ray.origin.dx - sphere.center.dx,
-            ray.origin.dy - sphere.center.dy,
-            ray.origin.dz - sphere.center.dz};
+  Vector ca = ray.origin - sphere.center;
   double a = dot(ray.direction, ray.direction);
-  double b = -2 * dot(ca, ray.direction);
+  double b = 2 * dot(ca, ray.direction);
   double c = dot(ca, ca) - (sphere.radius * sphere.radius);
 
   if (ostream) {
@@ -159,7 +176,11 @@ bool hit_sphere(const Ray& ray, const Sphere& sphere, std::optional<std::referen
              << "    c: " << c << '\n';
   }
 
-  return b*b - 4*a*c > 0;
+  if (double discriminant = b*b - 4*a*c > 0; discriminant > 0) {
+    return -b - std::sqrt(discriminant) / ( 2.0 * a );
+  } else {
+    return -1;
+  }
 }
 
 // TODO: would a cache help here? e.g. memoization
@@ -172,9 +193,9 @@ Color ray_color(const Ray& ray, std::optional<std::reference_wrapper<std::ostrea
     ostream.value().get() << "  for vector: " << ray.direction << ", length: " << vector_length(ray.direction) << '\n';
   }
 
-  int red = CMAX * lerp(0.5, 1.0, t);
-  int green = CMAX * lerp(0.7, 1.0, t);
-  int blue = CMAX;
+  double red = lerp(0.5, 1.0, t);
+  double green = lerp(0.7, 1.0, t);
+  double blue = 1.0;
 
   return Color{red, green, blue};
 }
@@ -182,7 +203,7 @@ Color ray_color(const Ray& ray, std::optional<std::reference_wrapper<std::ostrea
 int main () {
   // image
   const double aspect_ratio = 16.0 / 9.0;
-  const int height = 600;
+  const int height = 711;
   /* double aspect_ratio = 1.0; */
   /* int height = 2; */
   const int width = height * aspect_ratio;
@@ -193,11 +214,11 @@ int main () {
   // x is fixed by the apsect ratio, which is width / height, or x / y
   // therefor, -2 * 16/9 < x < 2 * 16/9
   // or approx. -3.55 < x < 3.55
-  // 
+  //
   // x is positive to the right
   // y is positive down
   //
-  // Top-left of the screen is x = -width/2, y = -height/2 
+  // Top-left of the screen is x = -width/2, y = -height/2
   // bottom-right of the screen is x = width/2, y = height/2
   // positive Z is into the screen
   double viewport_height = 2.0;
@@ -228,12 +249,18 @@ int main () {
       double y = lerp(-viewport_height, viewport_height, j / double(height));
       double z = focal_length;
 
-      Ray ray{/*origin=*/{0, 0, 0.0}, /*direction=*/{x, y, z}};
+      Ray ray{/*origin=*/{0, 0, -1.0}, /*direction=*/{x, y, z}};
 
       /* logfile << "Row: " << j << ", Col: " << i << ", " << ray; */
       /* logfile << "  x: " << x << ", y: " << y << ", z: " << z << '\n'; */
-      if (hit_sphere(ray, sphere)) {
-        write_pixel(outfile, {CMAX, 0, 0});
+      if (double t = hit_sphere(ray, sphere); t > 0) {
+        // normalize to (0, 1) instead of (-1, 1)
+        Vector normal =  0.5 * (Vector{1, 1, 1} + unit_vector(ray.at(t) - sphere.center));
+        /* logfile << "  t: " << t << '\n'; */
+        /* logfile << "  ray.at(t): " << ray.at(t) << '\n'; */
+        /* logfile << "  normal: " << normal << '\n'; */
+        /* logfile << "  normal length: " << vector_length(normal) << '\n'; */
+        write_pixel(outfile, {normal.dx, normal.dy, normal.dz});
         /* logfile << "  HIT!\n"; */
       } else {
         Color color = ray_color(ray);
