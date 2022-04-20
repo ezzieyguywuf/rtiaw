@@ -1,8 +1,8 @@
 #include <chrono>
 #include <cmath>
+#include <iostream>
 #include <fstream>
 #include <functional>
-#include <iostream>
 #include <optional>
 #include <queue>
 #include <string>
@@ -149,7 +149,7 @@ bool hit_sphere(const Ray& ray, const Sphere& sphere, std::optional<std::referen
             ray.origin.dy - sphere.center.dy,
             ray.origin.dz - sphere.center.dz};
   double a = dot(ray.direction, ray.direction);
-  double b = 2 * dot(ca, ray.direction);
+  double b = -2 * dot(ca, ray.direction);
   double c = dot(ca, ca) - (sphere.radius * sphere.radius);
 
   if (ostream) {
@@ -200,40 +200,35 @@ int main () {
   // Top-left of the screen is x = -width/2, y = -height/2 
   // bottom-right of the screen is x = width/2, y = height/2
   // positive Z is into the screen
-  double viewport_height = 4.0;
+  double viewport_height = 2.0;
   double viewport_width = viewport_height * aspect_ratio;
   double focal_length = 1.0;
 
-  std::cout << "height: " << height << ", width: " << width << '\n';
-  std::cout << "vp_height: " << viewport_height << ", vp_width: " << viewport_width << '\n';
-
-  const std::size_t log_rows = 10;
-  std::vector<std::string> log_data;
-  std::queue<std::string, std::vector<std::string>> log_queue(log_data);
-  Logger logger(log_rows);
+  /* const std::size_t log_rows = 10; */
+  /* std::vector<std::string> log_data; */
+  /* std::queue<std::string, std::vector<std::string>> log_queue(log_data); */
+  /* Logger logger(log_rows); */
 
   std::ofstream outfile("test.ppm", std::ios::out);
   std::ofstream logfile("log.txt", std::ios::out);
   init_ppm(outfile, width, height);
 
-  Vector viewport_center{0.0, 0.0, 0.0};
-
-  Sphere sphere{Vector{viewport_center.dx, viewport_center.dy, focal_length}, 0.5};
+  Sphere sphere{Vector{0.0, 0.0, 1.0}, 0.5};
   logfile << "width: " << width
           << ", height: " << height
           << ", aspect_ratio: " << aspect_ratio <<'\n';
   logfile << "viewport_width: " << viewport_width
           << ", viewport_height: " << viewport_height << '\n';
-  logfile << "Sphere center: " << sphere.center << ", rad: " << 0.5 << '\n';
+  logfile << "Sphere center: " << sphere.center << ", rad: " << sphere.radius<< '\n';
 
   // i and j represent one pixel each along the +x and +y axes, respectively.
   for (int j = 0; j < height; ++j) {
     for (int i = 0; i < width; ++i) {
-      double x = lerp(-viewport_width, viewport_width, i / double(width));
+      double x = lerp(-viewport_width, viewport_width, i / double(width - 1));
       double y = lerp(-viewport_height, viewport_height, j / double(height));
       double z = focal_length;
 
-      Ray ray{/*origin=*/{viewport_center.dx, viewport_center.dy, -focal_length}, /*direction=*/{x, y, z}};
+      Ray ray{/*origin=*/{0, 0, 0.0}, /*direction=*/{x, y, z}};
 
       /* logfile << "Row: " << j << ", Col: " << i << ", " << ray; */
       /* logfile << "  x: " << x << ", y: " << y << ", z: " << z << '\n'; */
