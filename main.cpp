@@ -1,14 +1,14 @@
-#include <chrono>
-#include <cmath>
 #include <iostream>
 #include <fstream>
 #include <functional>
 #include <optional>
-#include <queue>
 #include <string>
 #include <sstream>
-#include <thread>
 #include <vector>
+
+#include "objects.h"
+#include "logger.h"
+#include "vector.h"
 
 // The maximum value for a given color channel
 constexpr int CMAX = 255;
@@ -27,73 +27,10 @@ struct Color {
   Color(double r, double g, double b) : red(CMAX * r), green(CMAX * g), blue(CMAX * b) {}
 };
 
-struct Vector {
-  double dx;
-  double dy;
-  double dz;
-
-  Vector operator*(double val) const {
-    return {dx * val, dy * val, dz * val};
-  }
-
-  Vector operator/(double val) const {
-    return {dx / val, dy / val, dz / val};
-  }
-
-  Vector operator+(const Vector& other) const {
-    return {dx + other.dx, dy + other.dy, dz + other.dz};
-  }
-
-  Vector operator-(const Vector& other) const {
-    return {dx - other.dx, dy - other.dy, dz - other.dz};
-  }
-};
-
-std::ostream& operator<<(std::ostream& out, const Vector& vec) {
-  out << "{" << vec.dx << ", " << vec.dy << ", " << vec.dz << "}";
-  return out;
-}
-
-
-Vector operator* (double val, const Vector& vec) {
-  return vec * val;
-}
-
-Vector operator/ (double val, const Vector& vec) {
-  return vec / val;
-}
-
 // Every pixel will be on its own line
 void write_pixel(std::ostream& out, const Color& color) {
   out << color.red << ' ' << color.green << ' ' << color.blue << '\n';
 }
-
-class Logger {
-  public:
-    Logger(std::size_t rows = 10) : rows_(rows) {
-      std::cout << std::string(rows_, '\n') << std::flush;
-    }
-
-    // Logs the data std::cout, using ANSI escape sequences to reuse the same
-    // area of the terminal rather than scrolling
-    void log(const std::vector<std::string>& data) {
-      // Move cursor up by rows_
-      std::cout << "\033[" << rows_ << "A";
-      for (const std::string& d : data) {
-        std::cout << d << '\n';
-      }
-
-      if (data.size() < rows_) {
-        std::cout << std::string ( rows_ - data.size(), '\n' );
-      }
-
-      std::cout << std::flush;
-    }
-
-
-  private:
-    std::size_t rows_;
-};
 
 // A very rudimentary "queue" - when the vector reaches the target size, the
 // first element will be removed, everything will be shifted "up", and finally
@@ -117,38 +54,6 @@ double lerp(double a, double b, double t) {
   return a + t * (b - a);
 }
 
-double vector_length(const Vector& vec) {
-  return std::sqrt(vec.dx * vec.dx + vec.dy * vec.dy + vec.dz * vec.dz);
-}
-
-double dot(const Vector& u, const Vector& v) {
-  return u.dx * v.dx + u.dy * v.dy + u.dz * v.dz;
-}
-
-Vector unit_vector(const Vector& vec) {
-  return vec / vector_length(vec);
-}
-
-struct Sphere {
-  Vector center;
-  double radius;
-};
-
-struct Ray {
-  Vector origin;
-  Vector direction;
-
-  Vector at(double t) {
-    return origin + t * direction;
-  }
-};
-
-std::ostream& operator<<(std::ostream& out, const Ray& ray) {
-  out << "Ray{origin: " << ray.origin << ", "
-      <<     "direction:" << ray.direction << "}";
-  return out;
-}
-
 // General equation for a sphere: (x - Cx)² + (y - Cy)² + (z - Cz)² = r²
 // in vector form, C = {Cx, Cy, Cz}, P = {x, y, z}, so (P - C) · (P - C) = r²
 //
@@ -162,9 +67,9 @@ std::ostream& operator<<(std::ostream& out, const Ray& ray) {
 //                   = (B·B)t² - 2(B·(A - C))t + ((A-C)·(A-C) - r²) = 0
 //
 // returns the positive solution if it exists, -1 otherwise
-double hit_sphere(const Ray& ray, const Sphere& sphere, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
+double hit_sphere(const rtiaw::Ray& ray, const rtiaw::Sphere& sphere, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
   // (A - C) in equations above
-  Vector ca = ray.origin - sphere.center;
+  rtiaw::Vector ca = ray.origin - sphere.center;
   double a = dot(ray.direction, ray.direction);
   double b = 2 * dot(ca, ray.direction);
   double c = dot(ca, ca) - (sphere.radius * sphere.radius);
@@ -185,7 +90,7 @@ double hit_sphere(const Ray& ray, const Sphere& sphere, std::optional<std::refer
 
 // TODO: would a cache help here? e.g. memoization
 // TODO: add origin (for moving the camera later)
-Color ray_color(const Ray& ray, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
+Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
   // 0 < t < 1
   double t = 0.5 * ray.direction.dy / vector_length(ray.direction);
 
@@ -228,13 +133,13 @@ int main () {
   /* const std::size_t log_rows = 10; */
   /* std::vector<std::string> log_data; */
   /* std::queue<std::string, std::vector<std::string>> log_queue(log_data); */
-  /* Logger logger(log_rows); */
+  /* rtiaw::Logger logger(log_rows); */
 
   std::ofstream outfile("test.ppm", std::ios::out);
   std::ofstream logfile("log.txt", std::ios::out);
   init_ppm(outfile, width, height);
 
-  Sphere sphere{Vector{0.0, 0.0, 1.0}, 0.5};
+  rtiaw::Sphere sphere{rtiaw::Vector{0.0, 0.0, 1.0}, 0.5};
   logfile << "width: " << width
           << ", height: " << height
           << ", aspect_ratio: " << aspect_ratio <<'\n';
@@ -249,13 +154,13 @@ int main () {
       double y = lerp(-viewport_height, viewport_height, j / double(height));
       double z = focal_length;
 
-      Ray ray{/*origin=*/{0, 0, -1.0}, /*direction=*/{x, y, z}};
+      rtiaw::Ray ray{/*origin=*/{0, 0, -1.0}, /*direction=*/{x, y, z}};
 
       /* logfile << "Row: " << j << ", Col: " << i << ", " << ray; */
       /* logfile << "  x: " << x << ", y: " << y << ", z: " << z << '\n'; */
       if (double t = hit_sphere(ray, sphere); t > 0) {
         // normalize to (0, 1) instead of (-1, 1)
-        Vector normal =  0.5 * (Vector{1, 1, 1} + unit_vector(ray.at(t) - sphere.center));
+        rtiaw::Vector normal =  0.5 * (rtiaw::Vector{1, 1, 1} + unit_vector(ray.at(t) - sphere.center));
         /* logfile << "  t: " << t << '\n'; */
         /* logfile << "  ray.at(t): " << ray.at(t) << '\n'; */
         /* logfile << "  normal: " << normal << '\n'; */
