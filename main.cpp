@@ -54,40 +54,6 @@ double lerp(double a, double b, double t) {
   return a + t * (b - a);
 }
 
-// General equation for a sphere: (x - Cx)² + (y - Cy)² + (z - Cz)² = r²
-// in vector form, C = {Cx, Cy, Cz}, P = {x, y, z}, so (P - C) · (P - C) = r²
-//
-// This can be solved using the quadratic formula.
-//
-// We need to expand P to P = A + t·B, which is our equation for our ray.
-//   A = origin of ray
-//   B = direction of ray
-//
-// (P - C) · (P - C) = (A + t·B - C) · (A + t·B - C)
-//                   = (B·B)t² - 2(B·(A - C))t + ((A-C)·(A-C) - r²) = 0
-//
-// returns the positive solution if it exists, -1 otherwise
-double hit_sphere(const rtiaw::Ray& ray, const rtiaw::Sphere& sphere, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
-  // (A - C) in equations above
-  rtiaw::Vector ca = ray.origin - sphere.center;
-  double a = dot(ray.direction, ray.direction);
-  double b = 2 * dot(ca, ray.direction);
-  double c = dot(ca, ca) - (sphere.radius * sphere.radius);
-
-  if (ostream) {
-    ostream.value().get() << "  ca: " << ca << '\n'
-             << "    a: " << a << '\n'
-             << "    b: " << b << '\n'
-             << "    c: " << c << '\n';
-  }
-
-  if (double discriminant = b*b - 4*a*c > 0; discriminant > 0) {
-    return -b - std::sqrt(discriminant) / ( 2.0 * a );
-  } else {
-    return -1;
-  }
-}
-
 // TODO: would a cache help here? e.g. memoization
 // TODO: add origin (for moving the camera later)
 Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
@@ -158,9 +124,10 @@ int main () {
 
       /* logfile << "Row: " << j << ", Col: " << i << ", " << ray; */
       /* logfile << "  x: " << x << ", y: " << y << ", z: " << z << '\n'; */
-      if (double t = hit_sphere(ray, sphere); t > 0) {
+      const rtiaw::Object& obj = sphere;
+      if (std::optional<double> t = obj.check_hit(ray); t.has_value()) {
         // normalize to (0, 1) instead of (-1, 1)
-        rtiaw::Vector normal =  0.5 * (rtiaw::Vector{1, 1, 1} + unit_vector(ray.at(t) - sphere.center));
+        rtiaw::Vector normal =  0.5 * (rtiaw::Vector{1, 1, 1} + unit_vector(ray.at(*t) - sphere.center));
         /* logfile << "  t: " << t << '\n'; */
         /* logfile << "  ray.at(t): " << ray.at(t) << '\n'; */
         /* logfile << "  normal: " << normal << '\n'; */
