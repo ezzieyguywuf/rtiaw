@@ -31,6 +31,7 @@ int main () {
   // image
   const double aspect_ratio = 16.0 / 9.0;
   const int height = 711;
+  /* const int height = 20; */
   /* double aspect_ratio = 1.0; */
   /* int height = 2; */
   const int width = height * aspect_ratio;
@@ -52,22 +53,22 @@ int main () {
   double viewport_width = viewport_height * aspect_ratio;
   double focal_length = 1.0;
 
-  /* const std::size_t log_rows = 10; */
-  /* std::vector<std::string> log_data; */
-  /* std::queue<std::string, std::vector<std::string>> log_queue(log_data); */
-  /* rtiaw::Logger logger(log_rows); */
-
   std::ofstream outfile("test.ppm", std::ios::out);
   std::ofstream logfile("log.txt", std::ios::out);
   rtiaw::init_ppm(outfile, width, height);
 
-  rtiaw::Sphere sphere{rtiaw::Vector{0.0, 0.0, 1.0}, 0.5};
+  // Objects in the world
+  std::vector<std::reference_wrapper<rtiaw::Object>> objects;
+  rtiaw::Sphere sphere1{rtiaw::Vector{0.0, 0.0, 1.0}, 0.5};
+  rtiaw::Sphere sphere2{rtiaw::Vector{0.0, 100.6, 1.0}, 100};
+  objects.push_back(sphere1);
+  objects.push_back(sphere2);
+
   logfile << "width: " << width
           << ", height: " << height
           << ", aspect_ratio: " << aspect_ratio <<'\n';
   logfile << "viewport_width: " << viewport_width
           << ", viewport_height: " << viewport_height << '\n';
-  logfile << "Sphere center: " << sphere.center << ", rad: " << sphere.radius<< '\n';
 
   // i and j represent one pixel each along the +x and +y axes, respectively.
   for (int j = 0; j < height; ++j) {
@@ -76,30 +77,25 @@ int main () {
       double y = rtiaw::lerp(-viewport_height, viewport_height, j / double(height));
       double z = focal_length;
 
-      rtiaw::Ray ray{/*origin=*/{0, 0, -1.0}, /*direction=*/{x, y, z}};
+      rtiaw::Ray ray{/*origin=*/{0, 0, 0.0}, /*direction=*/{x, y, z}};
 
-      /* logfile << "Row: " << j << ", Col: " << i << ", " << ray; */
-      /* logfile << "  x: " << x << ", y: " << y << ", z: " << z << '\n'; */
-      const rtiaw::Object& obj = sphere;
-      if (std::optional<double> t = obj.check_hit(ray); t.has_value()) {
-        // normalize to (0, 1) instead of (-1, 1)
-        rtiaw::Vector normal =  0.5 * (rtiaw::Vector{1, 1, 1} + unit_vector(ray.at(*t) - sphere.center));
-        /* logfile << "  t: " << t << '\n'; */
-        /* logfile << "  ray.at(t): " << ray.at(t) << '\n'; */
-        /* logfile << "  normal: " << normal << '\n'; */
-        /* logfile << "  normal length: " << vector_length(normal) << '\n'; */
-        rtiaw::write_pixel(outfile, {normal.dx, normal.dy, normal.dz});
-        /* logfile << "  HIT!\n"; */
-      } else {
-        rtiaw::Color color = ray_color(ray);
-        rtiaw::write_pixel(outfile, color);
-        /* logfile << "  MISS!\n"; */
+      double max_t = std::numeric_limits<double>::infinity();
+      rtiaw::Color color = ray_color(ray);
+      for (const rtiaw::Object& obj : objects ) {
+        if (std::optional<rtiaw::Object::HitData> hd = obj.check_hit(ray, 0, max_t); hd.has_value()) {
+          // normalize to (0, 1) instead of (-1, 1)
+          max_t = hd->t;
+          rtiaw::Vector normal = 0.5 * (rtiaw::Vector{1, 1, 1} + hd->normal);
+          color = rtiaw::Color(normal.dx, normal.dy, normal.dz);
+          /* logfile << "x: " << i << ", y: " << j */ 
+          /*         << "\n  ray: " << ray */
+          /*         << "\n  t: " << hd->t << ", raw normal: " << hd->normal */
+          /*         << "\n  color: " << color << '\n'; */
+        }      
       }
 
-      /* std::ostringstream data; */
-      /* data << "Row: " << j << ", Col: " << i << ", " << ray; */
-      /* push(log_data, data.str(), log_rows); */
-      /* logger.log(log_data); */
+      rtiaw::write_pixel(outfile, color);
+
     }
   }
 }

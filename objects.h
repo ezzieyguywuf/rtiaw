@@ -12,7 +12,7 @@ struct Ray {
   Vector origin;
   Vector direction;
 
-  Vector at(double t) {
+  Vector at(double t) const {
     return origin + t * direction;
   }
 };
@@ -20,13 +20,18 @@ struct Ray {
 // An object in 3D space. This object can be hit by a ray
 class Object {
  public:
-   virtual std::optional<double> check_hit(const Ray& ray) const {
+   struct HitData {
+     double t; // ray.at(t) is the location of the hit
+     Vector normal; // the surface normal at t - always points outwards
+   };
+
+   virtual std::optional<HitData> check_hit(const Ray& ray) const {
      return check_hit(ray, 0, DBL_MAX);
    }
 
   // If the ray hits the object, returns the t paramater at wherh the ray hits
   // the object. In other words, ray.at(t) is where the hit occurs
-  virtual std::optional<double> check_hit(
+  virtual std::optional<HitData> check_hit(
       const Ray& ray, double t_min, double t_max) const = 0;
 };
 
@@ -47,7 +52,7 @@ struct Sphere : public Object {
   //
   // (P - C) · (P - C) = (A + t·B - C) · (A + t·B - C)
   //                   = (B·B)t² - 2(B·(A - C))t + ((A-C)·(A-C) - r²) = 0
-  std::optional<double> check_hit(const Ray& ray, double t_min, double t_max) const override {
+  std::optional<HitData> check_hit(const Ray& ray, double t_min, double t_max) const override {
     // (A - C) in equations above
     Vector ca = ray.origin - center;
     double a = dot(ray.direction, ray.direction);
@@ -61,23 +66,29 @@ struct Sphere : public Object {
 
     // Find the nearest root that lies in the acceptable range
     double sqrtd = std::sqrt(discriminant);
-    double root1 = -b - sqrtd / (2.0 * a);
-    double root2 = -b + sqrtd / (2.0 * a);
+    double root1 = (-b - sqrtd) / (2.0 * a);
+    double root2 = (-b + sqrtd) / (2.0 * a);
 
     // there's a few different scenareos here - either or both of the roots
     // could be outside the t_min t_max range. In case both are within range, we
     // want to return the smallest of the two
     bool root1_in_range = (root1 >= t_min) && (root1 <= t_max);
     bool root2_in_range = (root2 >= t_min) && (root2 <= t_max);
+
+    HitData hit;
     if ( root1_in_range && root2_in_range ) {
-      return root1 < root2 ? root1 : root2;
+      hit.t = root1 < root2 ? root1 : root2;
     } else if (root1_in_range) {
-      return root1;
+      hit.t = root1;
     } else if (root2_in_range) {
-      return root2;
+      hit.t = root2;
     } else {
       return std::nullopt;
     }
+
+    hit.normal = unit_vector(ray.at(hit.t) - center);
+
+    return hit;
   }
 };
 

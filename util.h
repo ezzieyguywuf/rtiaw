@@ -2,6 +2,7 @@
 #define RTIAW_UTIL_HEADER
 
 #include <iostream>
+#include <ostream>
 #include <vector>
 
 namespace rtiaw {
@@ -43,6 +44,14 @@ struct Color {
 
   Color(double r, double g, double b) : red(CMAX * r), green(CMAX * g), blue(CMAX * b) {}
 };
+
+std::ostream& operator<<(std::ostream& out, const Color& color) {
+  out << "Color{r: "<< color.red
+          << ", g: " << color.green
+          << ", b: " << color.blue << "}";
+
+  return out;
+}
 
 // Initialize a "Portable Pixmap" file in "P3" mode, i.e. ASCII input with full
 // color support
