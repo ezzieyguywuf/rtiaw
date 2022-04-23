@@ -7,56 +7,12 @@
 #include <vector>
 
 #include "objects.h"
-#include "logger.h"
+#include "util.h"
 #include "vector.h"
-
-// The maximum value for a given color channel
-constexpr int CMAX = 255;
-
-// Initialize a "Portable Pixmap" file in "P3" mode, i.e. ASCII input with full
-// color support
-void init_ppm(std::ostream& out, int width, int height) {
-  out << "P3\n" << width << " " << height << '\n' << CMAX << '\n';
-}
-
-struct Color {
-  int red = 0;
-  int green = 0;
-  int blue = 0;
-
-  Color(double r, double g, double b) : red(CMAX * r), green(CMAX * g), blue(CMAX * b) {}
-};
-
-// Every pixel will be on its own line
-void write_pixel(std::ostream& out, const Color& color) {
-  out << color.red << ' ' << color.green << ' ' << color.blue << '\n';
-}
-
-// A very rudimentary "queue" - when the vector reaches the target size, the
-// first element will be removed, everything will be shifted "up", and finally
-// the target item is added to the back
-void push(
-  std::vector<std::string>& data, const std::string& item, std::size_t n = 10) {
-  if (data.size() < n) {
-    data.push_back(item);
-    return;
-  }
-
-  for (std::size_t i = 0; i < n - 1; ++i) {
-    data[i] = data[i + 1];
-  }
-  data[n - 1] = item;
-}
-
-// The linear interpolation of t between a and b
-double lerp(double a, double b, double t) {
-  // TODO: see if C++20 does any optimizations for this
-  return a + t * (b - a);
-}
 
 // TODO: would a cache help here? e.g. memoization
 // TODO: add origin (for moving the camera later)
-Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
+rtiaw::Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
   // 0 < t < 1
   double t = 0.5 * ray.direction.dy / vector_length(ray.direction);
 
@@ -64,11 +20,11 @@ Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapper<std:
     ostream.value().get() << "  for vector: " << ray.direction << ", length: " << vector_length(ray.direction) << '\n';
   }
 
-  double red = lerp(0.5, 1.0, t);
-  double green = lerp(0.7, 1.0, t);
+  double red = rtiaw::lerp(0.5, 1.0, t);
+  double green = rtiaw::lerp(0.7, 1.0, t);
   double blue = 1.0;
 
-  return Color{red, green, blue};
+  return rtiaw::Color{red, green, blue};
 }
 
 int main () {
@@ -103,7 +59,7 @@ int main () {
 
   std::ofstream outfile("test.ppm", std::ios::out);
   std::ofstream logfile("log.txt", std::ios::out);
-  init_ppm(outfile, width, height);
+  rtiaw::init_ppm(outfile, width, height);
 
   rtiaw::Sphere sphere{rtiaw::Vector{0.0, 0.0, 1.0}, 0.5};
   logfile << "width: " << width
@@ -116,8 +72,8 @@ int main () {
   // i and j represent one pixel each along the +x and +y axes, respectively.
   for (int j = 0; j < height; ++j) {
     for (int i = 0; i < width; ++i) {
-      double x = lerp(-viewport_width, viewport_width, i / double(width - 1));
-      double y = lerp(-viewport_height, viewport_height, j / double(height));
+      double x = rtiaw::lerp(-viewport_width, viewport_width, i / double(width - 1));
+      double y = rtiaw::lerp(-viewport_height, viewport_height, j / double(height));
       double z = focal_length;
 
       rtiaw::Ray ray{/*origin=*/{0, 0, -1.0}, /*direction=*/{x, y, z}};
@@ -132,11 +88,11 @@ int main () {
         /* logfile << "  ray.at(t): " << ray.at(t) << '\n'; */
         /* logfile << "  normal: " << normal << '\n'; */
         /* logfile << "  normal length: " << vector_length(normal) << '\n'; */
-        write_pixel(outfile, {normal.dx, normal.dy, normal.dz});
+        rtiaw::write_pixel(outfile, {normal.dx, normal.dy, normal.dz});
         /* logfile << "  HIT!\n"; */
       } else {
-        Color color = ray_color(ray);
-        write_pixel(outfile, color);
+        rtiaw::Color color = ray_color(ray);
+        rtiaw::write_pixel(outfile, color);
         /* logfile << "  MISS!\n"; */
       }
 
