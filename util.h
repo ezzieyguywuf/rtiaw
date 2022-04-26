@@ -5,6 +5,8 @@
 #include <ostream>
 #include <vector>
 
+#include "vector.h"
+
 namespace rtiaw {
 // The maximum value for a given color channel
 constexpr int CMAX = 255;
@@ -36,6 +38,14 @@ class Logger {
     std::size_t rows_;
 };
 
+struct Ray {
+  Vector origin;
+  Vector direction;
+
+  Vector at(double t) const {
+    return origin + t * direction;
+  }
+};
 
 struct Color {
   int red = 0;

@@ -5,18 +5,10 @@
 #include <ostream>
 #include <optional>
 
+#include "util.h"
 #include "vector.h"
 
 namespace rtiaw{
-struct Ray {
-  Vector origin;
-  Vector direction;
-
-  Vector at(double t) const {
-    return origin + t * direction;
-  }
-};
-
 // An object in 3D space. This object can be hit by a ray
 class Object {
  public:
