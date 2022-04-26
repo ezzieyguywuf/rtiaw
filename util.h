@@ -55,6 +55,33 @@ struct Color {
   Color(double r, double g, double b) : red(CMAX * r), green(CMAX * g), blue(CMAX * b) {}
 };
 
+// The linear interpolation of t between a and b
+double lerp(double a, double b, double t) {
+  // TODO: see if C++20 does any optimizations for this
+  return a + t * (b - a);
+}
+
+class Camera {
+  public:
+    Camera(double viewport_height, double viewport_width, double focal_length)
+      : viewport_height_(viewport_height), viewport_width_(viewport_width),
+        focal_length_(focal_length) {}
+
+    Ray ray_at(double u, double v) {
+      double x = rtiaw::lerp(-viewport_width_, viewport_width_, u);
+      double y = rtiaw::lerp(-viewport_height_, viewport_height_, v);
+      double z = focal_length_;
+
+      return rtiaw::Ray{/*origin=*/location_, /*direction=*/{x, y, z}};
+    }
+
+  private:
+    Vector location_ = {0, 0, 0};
+    double viewport_height_;
+    double viewport_width_;
+    double focal_length_;
+};
+
 std::ostream& operator<<(std::ostream& out, const Color& color) {
   out << "Color{r: "<< color.red
           << ", g: " << color.green
@@ -88,12 +115,6 @@ void push(
     data[i] = data[i + 1];
   }
   data[n - 1] = item;
-}
-
-// The linear interpolation of t between a and b
-double lerp(double a, double b, double t) {
-  // TODO: see if C++20 does any optimizations for this
-  return a + t * (b - a);
 }
 
 }

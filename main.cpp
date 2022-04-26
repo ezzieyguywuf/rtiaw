@@ -51,7 +51,7 @@ int main () {
   // positive Z is into the screen
   double viewport_height = 2.0;
   double viewport_width = viewport_height * aspect_ratio;
-  double focal_length = 1.0;
+  rtiaw::Camera cam(viewport_height, viewport_width, /*focal_length=*/1.0);
 
   std::ofstream outfile("test.ppm", std::ios::out);
   std::ofstream logfile("log.txt", std::ios::out);
@@ -73,11 +73,10 @@ int main () {
   // i and j represent one pixel each along the +x and +y axes, respectively.
   for (int j = 0; j < height; ++j) {
     for (int i = 0; i < width; ++i) {
-      double x = rtiaw::lerp(-viewport_width, viewport_width, i / double(width - 1));
-      double y = rtiaw::lerp(-viewport_height, viewport_height, j / double(height));
-      double z = focal_length;
+      double u = i / double(width - 1);
+      double v = j / double(height);
 
-      rtiaw::Ray ray{/*origin=*/{0, 0, 0.0}, /*direction=*/{x, y, z}};
+      rtiaw::Ray ray = cam.ray_at(u, v);
 
       double max_t = std::numeric_limits<double>::infinity();
       rtiaw::Color color = ray_color(ray);
