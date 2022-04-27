@@ -2,6 +2,7 @@
 #include <fstream>
 #include <functional>
 #include <optional>
+#include <random>
 #include <string>
 #include <sstream>
 #include <vector>
@@ -28,6 +29,9 @@ rtiaw::Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapp
 }
 
 int main () {
+  static std::uniform_real_distribution<double> distribution(-0.5, 0.5);
+  static std::mt19937 generator;
+
   // image
   const double aspect_ratio = 16.0 / 9.0;
   const int height = 711;
@@ -35,6 +39,7 @@ int main () {
   /* double aspect_ratio = 1.0; */
   /* int height = 2; */
   const int width = height * aspect_ratio;
+  const int samples_per_pixel = 100;
 
   // Camera
   //
@@ -55,6 +60,7 @@ int main () {
 
   std::ofstream outfile("test.ppm", std::ios::out);
   std::ofstream logfile("log.txt", std::ios::out);
+  rtiaw::Logger logger;
   rtiaw::init_ppm(outfile, width, height);
 
   // Objects in the world
@@ -73,28 +79,44 @@ int main () {
   // i and j represent one pixel each along the +x and +y axes, respectively.
   for (int j = 0; j < height; ++j) {
     for (int i = 0; i < width; ++i) {
-      double u = i / double(width - 1);
-      double v = j / double(height);
+      bool hit = false;
+      rtiaw::Color color{0, 0, 0};
+      for (int sample = 0; sample < samples_per_pixel; ++sample) {
+        double u = (i + distribution(generator)) / double(width - 1);
+        double v = (j + distribution(generator)) / double(height);
+        rtiaw::Ray ray = cam.ray_at(u, v);
 
-      rtiaw::Ray ray = cam.ray_at(u, v);
+        if (sample == 0 ) {
+          color = ray_color(ray);
+        }
 
-      double max_t = std::numeric_limits<double>::infinity();
-      rtiaw::Color color = ray_color(ray);
-      for (const rtiaw::Object& obj : objects ) {
-        if (std::optional<rtiaw::Object::HitData> hd = obj.check_hit(ray, 0, max_t); hd.has_value()) {
-          // normalize to (0, 1) instead of (-1, 1)
-          max_t = hd->t;
-          rtiaw::Vector normal = 0.5 * (rtiaw::Vector{1, 1, 1} + hd->normal);
-          color = rtiaw::Color(normal.dx, normal.dy, normal.dz);
-          /* logfile << "x: " << i << ", y: " << j */ 
-          /*         << "\n  ray: " << ray */
-          /*         << "\n  t: " << hd->t << ", raw normal: " << hd->normal */
-          /*         << "\n  color: " << color << '\n'; */
-        }      
+        double max_t = std::numeric_limits<double>::infinity();
+        for (const rtiaw::Object& obj : objects ) {
+          if (std::optional<rtiaw::Object::HitData> hd = obj.check_hit(ray, 0, max_t); hd.has_value()) {
+            // normalize to (0, 1) instead of (-1, 1)
+            hit = true;
+            max_t = hd->t;
+            rtiaw::Vector normal = 0.5 * (rtiaw::Vector{1, 1, 1} + hd->normal);
+            rtiaw::Color delta(normal.dx, normal.dy, normal.dz);
+            color.red += delta.red;
+            color.green += delta.green;
+            color.blue += delta.blue;
+          }      
+        }
+      }
+
+      if (hit) {
+        color.red   /= samples_per_pixel;
+        color.green /= samples_per_pixel;
+        color.blue  /= samples_per_pixel;
       }
 
       rtiaw::write_pixel(outfile, color);
-
     }
+
+    std::stringstream sstream;
+    sstream << (float) j / height * 100 << "% complete";
+    logger.push(sstream.str());
+    logger.print_log();
   }
 }
