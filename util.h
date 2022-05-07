@@ -2,7 +2,10 @@
 #define RTIAW_UTIL_HEADER
 
 #include <iostream>
+#include <iomanip>
 #include <ostream>
+#include <iostream>
+#include <fstream>
 #include <vector>
 
 #include "vector.h"
@@ -67,7 +70,10 @@ struct Color {
   int green = 0;
   int blue = 0;
 
-  Color(double r, double g, double b) : red(CMAX * r), green(CMAX * g), blue(CMAX * b) {}
+  explicit Color(double r, double g, double b)
+    : red(CMAX * r), green(CMAX * g), blue(CMAX * b) {}
+  explicit Color(int r, int g, int b)
+    : red(r), green(g), blue(b) {}
 };
 
 // The linear interpolation of t between a and b
@@ -105,11 +111,71 @@ std::ostream& operator<<(std::ostream& out, const Color& color) {
   return out;
 }
 
+std::ofstream& operator<<(std::ofstream& out, const Color& color) {
+  out << std::setw(3) << color.red << ' '
+      << std::setw(3) << color.green << ' '
+      << std::setw(3) << color.blue << '\n';
+
+  return out;
+}
+
+std::fstream& operator<<(std::fstream& out, const Color& color) {
+  out << std::setw(3) << color.red << ' '
+      << std::setw(3) << color.green << ' '
+      << std::setw(3) << color.blue << '\n';
+
+  return out;
+}
 // Initialize a "Portable Pixmap" file in "P3" mode, i.e. ASCII input with full
 // color support
 void init_ppm(std::ostream& out, int width, int height) {
   out << "P3\n" << width << " " << height << '\n' << CMAX << '\n';
 }
+
+class PpmWriter {
+  public:
+    // This will overwrite the file if it already exists
+    PpmWriter (const std::string& filename, int64_t width, int64_t height,
+               const Color& canvas = Color(180, 255, 200)) : nCol_(width) {
+      {
+        std::ofstream new_file(filename);
+        new_file << "P3\n" << width << " " << height << '\n' << CMAX << '\n';
+        offset_ = new_file.tellp();
+        new_file << SENTINEL << '\n';
+
+        for (int64_t i = 0; i < width * height; ++i) {
+          new_file << canvas;
+        }
+      }
+      file_ = std::fstream(filename);
+      std::cout << "offset: " << offset_ << '\n';
+    }
+
+    void write_pixel(const Color& color, int64_t row, int64_t col) {
+      file_.seekg(offset_);
+      std::string check;
+      std::getline(file_, check);
+      if (check != SENTINEL) {
+        std::cerr << "Sentinel value does not match - file seems corrupt. NOT WRITING!" << '\n';
+        std::cerr << "     got: " << check << '\n';
+        std::cerr << "  expect: " << SENTINEL << '\n';
+        return;
+      }
+
+      // TODO: this is pretty gnarly - try to make it less gnarly
+      std::fstream::pos_type offset =
+        offset_ + std::fstream::pos_type(29) + row * (12 * nCol_) + col * 12;
+      std::cout << "for row: " << row << ", col: " << col << ", offset: " << offset << '\n';
+      file_.seekg(offset);
+      file_ << color;
+    }
+
+  private:
+    constexpr static const char* const SENTINEL = "#SENTINAL pixels start below";
+    std::fstream file_;
+    std::fstream::pos_type offset_;
+    std::fstream::pos_type nCol_;
+};
 
 // Every pixel will be on its own line
 void write_pixel(std::ostream& out, const Color& color) {
