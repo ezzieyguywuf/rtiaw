@@ -35,7 +35,7 @@ int main () {
   // image
   const double aspect_ratio = 16.0 / 9.0;
   const int height = 711;
-  /* const int height = 20; */
+  // const int height = 4;
   /* double aspect_ratio = 1.0; */
   /* int height = 2; */
   const int width = height * aspect_ratio;
@@ -58,10 +58,9 @@ int main () {
   double viewport_width = viewport_height * aspect_ratio;
   rtiaw::Camera cam(viewport_height, viewport_width, /*focal_length=*/1.0);
 
-  std::ofstream outfile("test.ppm", std::ios::out);
+  rtiaw::PpmWriter writer("output.ppm", width, height);
   std::ofstream logfile("log.txt", std::ios::out);
   rtiaw::Logger logger;
-  rtiaw::init_ppm(outfile, width, height);
 
   // Objects in the world
   std::vector<std::reference_wrapper<rtiaw::Object>> objects;
@@ -111,7 +110,7 @@ int main () {
         color.blue  /= samples_per_pixel;
       }
 
-      rtiaw::write_pixel(outfile, color);
+      writer.write_pixel(color, j, i);
     }
 
     std::stringstream sstream;
