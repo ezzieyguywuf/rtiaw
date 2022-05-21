@@ -49,12 +49,13 @@ public:
 
     int segment_size = indices.size() / segments;
     for (int i = 0; i < segments - 1; ++i) {
-      index_map_[i].emplace(indices.begin() + segment_size * i,
-                            indices.begin() + segment_size * i + segment_size);
+      index_map_.try_emplace(i, indices.begin() + segment_size * i,
+                             indices.begin() + segment_size * i + segment_size);
     }
 
-    index_map_[segments - 1].emplace(
-        indices.begin() + segment_size * (segments - 1), indices.end());
+    index_map_.try_emplace(segments - 1,
+                           indices.begin() + segment_size * (segments - 1),
+                           indices.end());
 
     for (const auto &[segment, indices] : index_map_) {
       for (std::size_t index : indices) {
