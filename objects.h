@@ -2,36 +2,37 @@
 #define RTIAW_OBJECTS_HEADER
 
 #include <cfloat>
-#include <ostream>
 #include <optional>
+#include <ostream>
 
 #include "util.h"
 #include "vector.h"
 
-namespace rtiaw{
+namespace rtiaw {
 // An object in 3D space. This object can be hit by a ray
 class Object {
- public:
-   struct HitData {
-     double t; // ray.at(t) is the location of the hit
-     Vector normal; // the surface normal at t - always points outwards
-   };
+public:
+  struct HitData {
+    double t;      // ray.at(t) is the location of the hit
+    Vector normal; // the surface normal at t - always points outwards
+  };
 
-   virtual std::optional<HitData> check_hit(const Ray& ray) const {
-     return check_hit(ray, 0, DBL_MAX);
-   }
+  virtual std::optional<HitData> check_hit(const Ray &ray) const {
+    return check_hit(ray, 0, DBL_MAX);
+  }
 
   // If the ray hits the object, returns the t paramater at wherh the ray hits
   // the object. In other words, ray.at(t) is where the hit occurs
-  virtual std::optional<HitData> check_hit(
-      const Ray& ray, double t_min, double t_max) const = 0;
+  virtual std::optional<HitData> check_hit(const Ray &ray, double t_min,
+                                           double t_max) const = 0;
 };
 
 struct Sphere : public Object {
   Vector center;
   double radius;
 
-  Sphere(const Vector& center, double radius) : center(center), radius(radius) {};
+  Sphere(const Vector &center, double radius)
+      : center(center), radius(radius){};
 
   // General equation for a sphere: (x - Cx)² + (y - Cy)² + (z - Cz)² = r²
   // in vector form, C = {Cx, Cy, Cz}, P = {x, y, z}, so (P - C) · (P - C) = r²
@@ -44,14 +45,15 @@ struct Sphere : public Object {
   //
   // (P - C) · (P - C) = (A + t·B - C) · (A + t·B - C)
   //                   = (B·B)t² - 2(B·(A - C))t + ((A-C)·(A-C) - r²) = 0
-  std::optional<HitData> check_hit(const Ray& ray, double t_min, double t_max) const override {
+  std::optional<HitData> check_hit(const Ray &ray, double t_min,
+                                   double t_max) const override {
     // (A - C) in equations above
     Vector ca = ray.origin - center;
     double a = dot(ray.direction, ray.direction);
     double b = 2 * dot(ca, ray.direction);
     double c = dot(ca, ca) - (radius * radius);
 
-    double discriminant = b*b - 4*a*c;
+    double discriminant = b * b - 4 * a * c;
     if (discriminant < 0) {
       return std::nullopt;
     }
@@ -68,7 +70,7 @@ struct Sphere : public Object {
     bool root2_in_range = (root2 >= t_min) && (root2 <= t_max);
 
     HitData hit;
-    if ( root1_in_range && root2_in_range ) {
+    if (root1_in_range && root2_in_range) {
       hit.t = root1 < root2 ? root1 : root2;
     } else if (root1_in_range) {
       hit.t = root1;
@@ -84,10 +86,9 @@ struct Sphere : public Object {
   }
 };
 
-
-std::ostream& operator<<(std::ostream& out, const Ray& ray) {
+std::ostream &operator<<(std::ostream &out, const Ray &ray) {
   out << "Ray{origin: " << ray.origin << ", "
-      <<     "direction:" << ray.direction << "}";
+      << "direction:" << ray.direction << "}";
   return out;
 }
 } // namespace rtiaw

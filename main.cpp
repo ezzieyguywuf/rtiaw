@@ -1,10 +1,15 @@
-#include <iostream>
+#include <algorithm>
 #include <fstream>
 #include <functional>
+#include <iostream>
+#include <mutex>
+#include <numeric>
 #include <optional>
 #include <random>
-#include <string>
 #include <sstream>
+#include <string>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "objects.h"
@@ -13,12 +18,16 @@
 
 // TODO: would a cache help here? e.g. memoization
 // TODO: add origin (for moving the camera later)
-rtiaw::Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapper<std::ostream>> ostream = std::nullopt) {
+rtiaw::Color ray_color(const rtiaw::Ray &ray,
+                       std::optional<std::reference_wrapper<std::ostream>>
+                           ostream = std::nullopt) {
   // 0 < t < 1
   double t = 0.5 * ray.direction.dy / vector_length(ray.direction);
 
   if (ostream) {
-    ostream.value().get() << "  for vector: " << ray.direction << ", length: " << vector_length(ray.direction) << '\n';
+    ostream.value().get() << "  for vector: " << ray.direction
+                          << ", length: " << vector_length(ray.direction)
+                          << '\n';
   }
 
   double red = rtiaw::lerp(0.5, 1.0, t);
@@ -28,7 +37,61 @@ rtiaw::Color ray_color(const rtiaw::Ray& ray, std::optional<std::reference_wrapp
   return rtiaw::Color{red, green, blue};
 }
 
-int main () {
+// This will hold enough memory to store all of our pixel data.
+class Framebuffer {
+public:
+  Framebuffer(int width, int height, int segments)
+      : data_(width * height, 0), mutexes_(segments) {
+    std::vector<std::size_t> indices(width * height);
+    std::iota(indices.begin(), indices.end(), 0);
+    std::shuffle(indices.begin(), indices.end(),
+                 std::mt19937{std::random_device{}()});
+
+    int segment_size = indices.size() / segments;
+    for (int i = 0; i < segments - 1; ++i) {
+      index_map_[i].emplace(indices.begin() + segment_size * i,
+                            indices.begin() + segment_size * i + segment_size);
+    }
+
+    index_map_[segments - 1].emplace(
+        indices.begin() + segment_size * (segments - 1), indices.end());
+
+    for (const auto &[segment, indices] : index_map_) {
+      for (std::size_t index : indices) {
+        segment_map_[index] = segment;
+      }
+    }
+  }
+
+  // Returns a map where there is one key for each segment requested in the
+  // constructor.
+  //
+  // The values are the indices associated with that segment. Each segment
+  // represents a thread-safe list of indices: indices in different segments
+  // can safely be written concurrently.
+  const std::unordered_map<int, std::vector<std::size_t>> &index_map() const {
+    return index_map_;
+  }
+
+  // Write the given pixel. This will lock until it is safe to write whatever
+  // segment the pixel happens to be in.
+  //
+  // WARNING: no bounds checking is done - so be careful
+  // TODO: maybe do some bounds checking
+  void write_pixel(std::size_t index, char data) {
+    std::scoped_lock<std::mutex> lk(mutexes_[segment_map_[index]]);
+    data_[index] = data;
+  }
+
+private:
+  std::vector<char> data_;
+  std::vector<std::mutex> mutexes_;
+  std::unordered_map<int, std::vector<std::size_t>> index_map_;
+  // the reverse of index_map_
+  std::unordered_map<std::size_t, int> segment_map_;
+};
+
+int main() {
   static std::uniform_real_distribution<double> distribution(-0.5, 0.5);
   static std::mt19937 generator;
 
@@ -40,6 +103,11 @@ int main () {
   /* int height = 2; */
   const int width = height * aspect_ratio;
   const int samples_per_pixel = 100;
+
+  Framebuffer buffer(width, height,
+                     std::thread::hardware_concurrency() == 0
+                         ? 1
+                         : std::thread::hardware_concurrency());
 
   // Camera
   //
@@ -69,9 +137,8 @@ int main () {
   objects.push_back(sphere1);
   objects.push_back(sphere2);
 
-  logfile << "width: " << width
-          << ", height: " << height
-          << ", aspect_ratio: " << aspect_ratio <<'\n';
+  logfile << "width: " << width << ", height: " << height
+          << ", aspect_ratio: " << aspect_ratio << '\n';
   logfile << "viewport_width: " << viewport_width
           << ", viewport_height: " << viewport_height << '\n';
 
@@ -85,13 +152,15 @@ int main () {
         double v = (j + distribution(generator)) / double(height);
         rtiaw::Ray ray = cam.ray_at(u, v);
 
-        if (sample == 0 ) {
+        if (sample == 0) {
           color = ray_color(ray);
         }
 
         double max_t = std::numeric_limits<double>::infinity();
-        for (const rtiaw::Object& obj : objects ) {
-          if (std::optional<rtiaw::Object::HitData> hd = obj.check_hit(ray, 0, max_t); hd.has_value()) {
+        for (const rtiaw::Object &obj : objects) {
+          if (std::optional<rtiaw::Object::HitData> hd =
+                  obj.check_hit(ray, 0, max_t);
+              hd.has_value()) {
             // normalize to (0, 1) instead of (-1, 1)
             hit = true;
             max_t = hd->t;
@@ -100,21 +169,21 @@ int main () {
             color.red += delta.red;
             color.green += delta.green;
             color.blue += delta.blue;
-          }      
+          }
         }
       }
 
       if (hit) {
-        color.red   /= samples_per_pixel;
+        color.red /= samples_per_pixel;
         color.green /= samples_per_pixel;
-        color.blue  /= samples_per_pixel;
+        color.blue /= samples_per_pixel;
       }
 
       writer.write_pixel(color, j, i);
     }
 
     std::stringstream sstream;
-    sstream << (float) j / height * 100 << "% complete";
+    sstream << (float)j / height * 100 << "% complete";
     logger.push(sstream.str());
     logger.print_log();
   }
