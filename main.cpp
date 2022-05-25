@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <mutex>
 #include <numeric>
@@ -115,70 +116,8 @@ private:
   std::unordered_map<int, std::vector<Pixel>> index_map_;
 };
 
-// TODO: make this function signature betterrer
-void runner(Framebuffer &writer, int chunk,
-            const std::vector<std::reference_wrapper<rtiaw::Object>> &objects,
-            const rtiaw::Camera &cam, int width, int height) {
-  static const int samples_per_pixel = 100;
-  static std::uniform_real_distribution<double> distribution(-0.5, 0.5);
-  static std::mt19937 generator;
-
-  for (const Framebuffer::Pixel &pixel : writer.chunk_pixels(chunk)) {
-    bool hit = false;
-    rtiaw::Color color{0, 0, 0};
-    for (int sample = 0; sample < samples_per_pixel; ++sample) {
-      double u = (pixel.col + distribution(generator)) / double(width - 1);
-      double v = (pixel.row + distribution(generator)) / double(height);
-      rtiaw::Ray ray = cam.ray_at(u, v);
-
-      if (sample == 0) {
-        color = ray_color(ray);
-      }
-
-      double max_t = std::numeric_limits<double>::infinity();
-      for (const rtiaw::Object &obj : objects) {
-        if (std::optional<rtiaw::Object::HitData> hd =
-                obj.check_hit(ray, 0, max_t);
-            hd.has_value()) {
-          // normalize to (0, 1) instead of (-1, 1)
-          hit = true;
-          max_t = hd->t;
-          rtiaw::Vector normal = 0.5 * (rtiaw::Vector{1, 1, 1} + hd->normal);
-          rtiaw::Color delta(normal.dx, normal.dy, normal.dz);
-          color.red += delta.red;
-          color.green += delta.green;
-          color.blue += delta.blue;
-        }
-      }
-    }
-
-    if (hit) {
-      color.red /= samples_per_pixel;
-      color.green /= samples_per_pixel;
-      color.blue /= samples_per_pixel;
-    }
-
-    writer.write_pixel(pixel, color);
-  }
-}
-
-int main() {
-  std::cout << "hello main\n";
-  // image
-  const double aspect_ratio = 16.0 / 9.0;
-  const int height = 711;
-  // const int height = 4;
-  /* double aspect_ratio = 1.0; */
-  /* int height = 2; */
-  const int width = height * aspect_ratio;
-
-  static const unsigned int nThread = std::thread::hardware_concurrency() == 0
-                                          ? 1
-                                          : std::thread::hardware_concurrency();
-  std::cout << "making buffer\n";
-  Framebuffer buffer(width, height, nThread);
-  std::cout << "....done making buffer\n";
-
+class Runner {
+public:
   // Camera
   //
   // Our viewport is scaled down to  -2 < y < 2
@@ -192,9 +131,74 @@ int main() {
   // Top-left of the screen is x = -width/2, y = -height/2
   // bottom-right of the screen is x = width/2, y = height/2
   // positive Z is into the screen
-  double viewport_height = 2.0;
-  double viewport_width = viewport_height * aspect_ratio;
-  rtiaw::Camera cam(viewport_height, viewport_width, /*focal_length=*/1.0);
+  Runner(int height, int width, double aspect_ratio, unsigned int nThread,
+         const std::vector<std::reference_wrapper<rtiaw::Object>> &objects,
+         double viewport_height = 2, double focal_length = 1)
+      : width_(width), height_(height), objects_(objects),
+        camera_(viewport_height, viewport_height * aspect_ratio, focal_length),
+        buffer_(width, height, nThread) {}
+
+  void run(int chunk) {
+    static const int samples_per_pixel = 100;
+    static std::uniform_real_distribution<double> distribution(-0.5, 0.5);
+    static std::mt19937 generator;
+
+    for (const Framebuffer::Pixel &pixel : buffer_.chunk_pixels(chunk)) {
+      bool hit = false;
+      rtiaw::Color color{0, 0, 0};
+      for (int sample = 0; sample < samples_per_pixel; ++sample) {
+        double u = (pixel.col + distribution(generator)) / double(width_ - 1);
+        double v = (pixel.row + distribution(generator)) / double(height_);
+        rtiaw::Ray ray = camera_.ray_at(u, v);
+
+        if (sample == 0) {
+          color = ray_color(ray);
+        }
+
+        double max_t = std::numeric_limits<double>::infinity();
+        for (const rtiaw::Object &obj : objects_) {
+          if (std::optional<rtiaw::Object::HitData> hd =
+                  obj.check_hit(ray, 0, max_t);
+              hd.has_value()) {
+            // normalize to (0, 1) instead of (-1, 1)
+            hit = true;
+            max_t = hd->t;
+            rtiaw::Vector normal = 0.5 * (rtiaw::Vector{1, 1, 1} + hd->normal);
+            rtiaw::Color delta(normal.dx, normal.dy, normal.dz);
+            color.red += delta.red;
+            color.green += delta.green;
+            color.blue += delta.blue;
+          }
+        }
+      }
+
+      if (hit) {
+        color.red /= samples_per_pixel;
+        color.green /= samples_per_pixel;
+        color.blue /= samples_per_pixel;
+      }
+
+      buffer_.write_pixel(pixel, color);
+    }
+  }
+
+private:
+  int width_;
+  int height_;
+  const std::vector<std::reference_wrapper<rtiaw::Object>> &objects_;
+  rtiaw::Camera camera_;
+  Framebuffer buffer_;
+};
+
+int main() {
+  std::cout << "hello main\n";
+  // image
+  const double aspect_ratio = 16.0 / 9.0;
+  const int height = 711;
+  // const int height = 4;
+  /* double aspect_ratio = 1.0; */
+  /* int height = 2; */
+  const int width = height * aspect_ratio;
 
   rtiaw::PpmWriter writer("output.ppm", width, height);
   std::ofstream logfile("log.txt", std::ios::out);
@@ -207,24 +211,20 @@ int main() {
   objects.push_back(sphere1);
   objects.push_back(sphere2);
 
-  logfile << "width: " << width << ", height: " << height
-          << ", aspect_ratio: " << aspect_ratio << '\n';
-  logfile << "viewport_width: " << viewport_width
-          << ", viewport_height: " << viewport_height << '\n';
-
-  // TODO: where you left off - fire off one thread per chunk to call runner
-  // then one more thread (I guess?) to periodically write the Framebuffer to
-  // disk
-  std::vector<std::thread> threads;
+  std::vector<std::future<void>> futures;
+  unsigned int nThread = std::thread::hardware_concurrency() == 0
+                             ? 1
+                             : std::thread::hardware_concurrency();
+  Runner runner(width, height, aspect_ratio, nThread, std::cref(objects));
   for (unsigned int n = 0; n < nThread; ++n) {
     std::cout << "spinning up thread " << n << '\n';
-    threads.emplace_back(runner, std::ref(buffer), 0, std::cref(objects),
-                         std::cref(cam), width, height);
+    futures.emplace_back(std::async(std::launch::async, &Runner::run,
+                                    std::reference_wrapper(runner), n));
   }
 
-  for (std::thread &thread : threads) {
-    std::cout << "waiting for thread...\n";
-    thread.join();
+  for (const std::future<void> &future : futures) {
+    std::cout << "waiting for a future..." << std::endl;
+    future.wait();
   }
 
   // TODO: re-enable some sort of logging
