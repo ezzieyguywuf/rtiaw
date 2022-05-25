@@ -40,38 +40,58 @@ rtiaw::Color ray_color(const rtiaw::Ray &ray,
 // This will hold enough memory to store all of our pixel data.
 class Framebuffer {
 public:
-  Framebuffer(int width, int height, int segments)
-      : data_(width * height, 0), mutexes_(segments) {
-    std::vector<std::size_t> indices(width * height);
-    std::iota(indices.begin(), indices.end(), 0);
-    std::shuffle(indices.begin(), indices.end(),
-                 std::mt19937{std::random_device{}()});
+  struct Pixel {
+    std::size_t row;
+    std::size_t col;
+    int segment;
 
-    int segment_size = indices.size() / segments;
-    for (int i = 0; i < segments - 1; ++i) {
-      index_map_.try_emplace(i, indices.begin() + segment_size * i,
-                             indices.begin() + segment_size * i + segment_size);
+    bool operator==(const Pixel &other) const {
+      return row == other.row && col == other.col && segment == other.segment;
     }
+  };
 
-    index_map_.try_emplace(segments - 1,
-                           indices.begin() + segment_size * (segments - 1),
-                           indices.end());
+  struct PixelHash {
+    std::size_t operator()(const Pixel &pixel) const noexcept {
+      std::size_t h1 = std::hash<std::size_t>{}(pixel.row);
+      std::size_t h2 = std::hash<std::size_t>{}(pixel.col);
+      return h1 ^ (h2 << 1); // copied from std::hash documentation...
+    }
+  };
 
-    for (const auto &[segment, indices] : index_map_) {
-      for (std::size_t index : indices) {
-        segment_map_[index] = segment;
+  Framebuffer(int width, int height, int segments)
+      : data_(width * height * 3, 0), mutexes_(segments), width_(width) {
+    std::cout << "  ctor\n";
+    std::vector<std::size_t> rows(height);
+    std::vector<std::size_t> cols(width);
+    std::iota(rows.begin(), rows.end(), 0);
+    std::iota(cols.begin(), cols.end(), 0);
+    std::shuffle(rows.begin(), rows.end(),
+                 std::mt19937{std::random_device{}()});
+    std::shuffle(cols.begin(), cols.end(),
+                 std::mt19937{std::random_device{}()});
+    std::cout << "  shuffled\n";
+
+    std::cout << "  reserving map space\n";
+    std::cout << "  loading index_map_...\n";
+    for (std::size_t col : cols) {
+      for (std::size_t row : rows) {
+        int segment = (row * width + col) % segments;
+        Pixel pixel{row, col, segment};
+        index_map_[segment].push_back(pixel);
       }
     }
+
+    std::cout << "  ...done! loading index_map_...\n";
   }
 
-  // Returns a map where there is one key for each segment requested in the
-  // constructor.
+  // Returns the list of indices associted with the given chunk.
   //
-  // The values are the indices associated with that segment. Each segment
-  // represents a thread-safe list of indices: indices in different segments
-  // can safely be written concurrently.
-  const std::unordered_map<int, std::vector<std::size_t>> &index_map() const {
-    return index_map_;
+  // No bounds-checking is done - if chunk >= nChunks, this will crash at
+  // runtime
+  //
+  // TODO: maybe do some bounds checking or design this better
+  const std::vector<Pixel> &chunk_pixels(int chunk) const {
+    return index_map_.at(chunk);
   }
 
   // Write the given pixel. This will lock until it is safe to write whatever
@@ -79,23 +99,71 @@ public:
   //
   // WARNING: no bounds checking is done - so be careful
   // TODO: maybe do some bounds checking
-  void write_pixel(std::size_t index, char data) {
-    std::scoped_lock<std::mutex> lk(mutexes_[segment_map_[index]]);
-    data_[index] = data;
+  void write_pixel(const Pixel &pixel, const rtiaw::Color &color) {
+    std::scoped_lock<std::mutex> lk(mutexes_[pixel.segment]);
+    std::size_t start = 3 * (pixel.row * width_ + pixel.col);
+    data_[start] = std::clamp(color.red, 0, 255);
+    data_[start + 1] = std::clamp(color.green, 0, 255);
+    data_[start + 2] = std::clamp(color.blue, 0, 255);
   }
 
 private:
   std::vector<char> data_;
   std::vector<std::mutex> mutexes_;
-  std::unordered_map<int, std::vector<std::size_t>> index_map_;
-  // the reverse of index_map_
-  std::unordered_map<std::size_t, int> segment_map_;
+  int width_;
+  // key = chunk, value = pixels assigned to chunk
+  std::unordered_map<int, std::vector<Pixel>> index_map_;
 };
 
-int main() {
+// TODO: make this function signature betterrer
+void runner(Framebuffer &writer, int chunk,
+            const std::vector<std::reference_wrapper<rtiaw::Object>> &objects,
+            const rtiaw::Camera &cam, int width, int height) {
+  static const int samples_per_pixel = 100;
   static std::uniform_real_distribution<double> distribution(-0.5, 0.5);
   static std::mt19937 generator;
 
+  for (const Framebuffer::Pixel &pixel : writer.chunk_pixels(chunk)) {
+    bool hit = false;
+    rtiaw::Color color{0, 0, 0};
+    for (int sample = 0; sample < samples_per_pixel; ++sample) {
+      double u = (pixel.col + distribution(generator)) / double(width - 1);
+      double v = (pixel.row + distribution(generator)) / double(height);
+      rtiaw::Ray ray = cam.ray_at(u, v);
+
+      if (sample == 0) {
+        color = ray_color(ray);
+      }
+
+      double max_t = std::numeric_limits<double>::infinity();
+      for (const rtiaw::Object &obj : objects) {
+        if (std::optional<rtiaw::Object::HitData> hd =
+                obj.check_hit(ray, 0, max_t);
+            hd.has_value()) {
+          // normalize to (0, 1) instead of (-1, 1)
+          hit = true;
+          max_t = hd->t;
+          rtiaw::Vector normal = 0.5 * (rtiaw::Vector{1, 1, 1} + hd->normal);
+          rtiaw::Color delta(normal.dx, normal.dy, normal.dz);
+          color.red += delta.red;
+          color.green += delta.green;
+          color.blue += delta.blue;
+        }
+      }
+    }
+
+    if (hit) {
+      color.red /= samples_per_pixel;
+      color.green /= samples_per_pixel;
+      color.blue /= samples_per_pixel;
+    }
+
+    writer.write_pixel(pixel, color);
+  }
+}
+
+int main() {
+  std::cout << "hello main\n";
   // image
   const double aspect_ratio = 16.0 / 9.0;
   const int height = 711;
@@ -103,12 +171,13 @@ int main() {
   /* double aspect_ratio = 1.0; */
   /* int height = 2; */
   const int width = height * aspect_ratio;
-  const int samples_per_pixel = 100;
 
-  Framebuffer buffer(width, height,
-                     std::thread::hardware_concurrency() == 0
-                         ? 1
-                         : std::thread::hardware_concurrency());
+  static const unsigned int nThread = std::thread::hardware_concurrency() == 0
+                                          ? 1
+                                          : std::thread::hardware_concurrency();
+  std::cout << "making buffer\n";
+  Framebuffer buffer(width, height, nThread);
+  std::cout << "....done making buffer\n";
 
   // Camera
   //
@@ -143,49 +212,29 @@ int main() {
   logfile << "viewport_width: " << viewport_width
           << ", viewport_height: " << viewport_height << '\n';
 
-  // i and j represent one pixel each along the +x and +y axes, respectively.
-  for (int j = 0; j < height; ++j) {
-    for (int i = 0; i < width; ++i) {
-      bool hit = false;
-      rtiaw::Color color{0, 0, 0};
-      for (int sample = 0; sample < samples_per_pixel; ++sample) {
-        double u = (i + distribution(generator)) / double(width - 1);
-        double v = (j + distribution(generator)) / double(height);
-        rtiaw::Ray ray = cam.ray_at(u, v);
-
-        if (sample == 0) {
-          color = ray_color(ray);
-        }
-
-        double max_t = std::numeric_limits<double>::infinity();
-        for (const rtiaw::Object &obj : objects) {
-          if (std::optional<rtiaw::Object::HitData> hd =
-                  obj.check_hit(ray, 0, max_t);
-              hd.has_value()) {
-            // normalize to (0, 1) instead of (-1, 1)
-            hit = true;
-            max_t = hd->t;
-            rtiaw::Vector normal = 0.5 * (rtiaw::Vector{1, 1, 1} + hd->normal);
-            rtiaw::Color delta(normal.dx, normal.dy, normal.dz);
-            color.red += delta.red;
-            color.green += delta.green;
-            color.blue += delta.blue;
-          }
-        }
-      }
-
-      if (hit) {
-        color.red /= samples_per_pixel;
-        color.green /= samples_per_pixel;
-        color.blue /= samples_per_pixel;
-      }
-
-      writer.write_pixel(color, j, i);
-    }
-
-    std::stringstream sstream;
-    sstream << (float)j / height * 100 << "% complete";
-    logger.push(sstream.str());
-    logger.print_log();
+  // TODO: where you left off - fire off one thread per chunk to call runner
+  // then one more thread (I guess?) to periodically write the Framebuffer to
+  // disk
+  std::vector<std::thread> threads;
+  for (unsigned int n = 0; n < nThread; ++n) {
+    std::cout << "spinning up thread " << n << '\n';
+    threads.emplace_back(runner, std::ref(buffer), 0, std::cref(objects),
+                         std::cref(cam), width, height);
   }
+
+  for (std::thread &thread : threads) {
+    std::cout << "waiting for thread...\n";
+    thread.join();
+  }
+
+  // TODO: re-enable some sort of logging
+  // i and j represent one pixel each along the +x and +y axes, respectively.
+  // for (int j = 0; j < height; ++j) {
+  //   for (int i = 0; i < width; ++i) {
+  //     std::stringstream sstream;
+  //     sstream << (float)j / height * 100 << "% complete";
+  //     logger.push(sstream.str());
+  //     logger.print_log();
+  //   }
+  // }
 }
