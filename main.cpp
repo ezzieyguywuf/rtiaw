@@ -13,6 +13,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include <SFML/Graphics.hpp>
+#include <SFML/Graphics/RectangleShape.hpp>
+#include <SFML/System/Clock.hpp>
+
 #include "objects.h"
 #include "util.h"
 #include "vector.h"
@@ -216,16 +220,62 @@ int main() {
                              ? 1
                              : std::thread::hardware_concurrency();
   Runner runner(width, height, aspect_ratio, nThread, std::cref(objects));
-  for (unsigned int n = 0; n < nThread; ++n) {
-    std::cout << "spinning up thread " << n << '\n';
-    futures.emplace_back(std::async(std::launch::async, &Runner::run,
-                                    std::reference_wrapper(runner), n));
+
+  // Create the main window
+  sf::RenderWindow window(sf::VideoMode(width, height), "raytracer");
+  window.setFramerateLimit(60);
+  int col = 0;
+  int row = 0;
+  sf::Clock clock;
+  while (window.isOpen()) {
+    // Process events
+    sf::Event event;
+    while (window.pollEvent(event)) {
+      // Close window: exit
+      if (event.type == sf::Event::Closed)
+        window.close();
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
+      window.close();
+    }
+
+    if (clock.getElapsedTime().asMilliseconds() > 5) {
+      clock.restart();
+
+      // Clear screen
+      window.clear();
+
+      if (col >= width) {
+        col = 0;
+      }
+      if (row >= height) {
+        row = 0;
+      }
+
+      sf::RectangleShape pixel({1, 1});
+      for (int row_adder = 0; row_adder <= 100; ++row_adder) {
+        pixel.setPosition(col, row + row_adder);
+        window.draw(pixel);
+      }
+
+      ++col;
+      ++row;
+    }
+
+    // Update the window
+    window.display();
   }
 
-  for (const std::future<void> &future : futures) {
-    std::cout << "waiting for a future..." << std::endl;
-    future.wait();
-  }
+  // for (unsigned int n = 0; n < nThread; ++n) {
+  //   std::cout << "spinning up thread " << n << '\n';
+  //   futures.emplace_back(std::async(std::launch::async, &Runner::run,
+  //                                   std::reference_wrapper(runner), n));
+  // }
+
+  // for (const std::future<void> &future : futures) {
+  //   std::cout << "waiting for a future..." << std::endl;
+  //   future.wait();
+  // }
 
   // TODO: re-enable some sort of logging
   // i and j represent one pixel each along the +x and +y axes, respectively.

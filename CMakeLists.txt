@@ -10,3 +10,4 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/lib)
 
 add_executable(ray_tracer main.cpp)
+target_link_libraries(ray_tracer sfml-graphics sfml-window sfml-system)
