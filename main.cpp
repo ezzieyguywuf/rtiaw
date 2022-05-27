@@ -105,16 +105,37 @@ public:
   // WARNING: no bounds checking is done - so be careful
   // TODO: maybe do some bounds checking
   void write_pixel(const Pixel &pixel, const rtiaw::Color &color) {
-    std::scoped_lock<std::mutex> lk(mutexes_[pixel.segment]);
+    std::scoped_lock lk(mutexes_[pixel.segment], read_mutex_);
     std::size_t start = 3 * (pixel.row * width_ + pixel.col);
     data_[start] = std::clamp(color.red, 0, 255);
     data_[start + 1] = std::clamp(color.green, 0, 255);
     data_[start + 2] = std::clamp(color.blue, 0, 255);
   }
 
+  // Will write 3-bytes for each Pixel: one byte each for Red, Green, Blue, in
+  // that order.
+  void dump_pixels(std::ostream &out) const {
+    std::scoped_lock lk(read_mutex_);
+    for (char data : data_) {
+      out << data;
+    }
+  }
+
+  rtiaw::Color pixel_color(int row, int col) const {
+    std::scoped_lock lk(read_mutex_);
+
+    std::size_t n = 3 * (row * width_ + col);
+    int red = data_[n];
+    int green = data_[n + 1];
+    int blue = data_[n + 2];
+
+    return rtiaw::Color(red, green, blue);
+  }
+
 private:
   std::vector<char> data_;
   std::vector<std::mutex> mutexes_;
+  mutable std::mutex read_mutex_;
   int width_;
   // key = chunk, value = pixels assigned to chunk
   std::unordered_map<int, std::vector<Pixel>> index_map_;
@@ -186,6 +207,10 @@ public:
     }
   }
 
+  void write_buffer(std::ostream &out) const { buffer_.dump_pixels(out); }
+
+  const Framebuffer &buffer() const { return buffer_; }
+
 private:
   int width_;
   int height_;
@@ -221,70 +246,59 @@ int main() {
                              : std::thread::hardware_concurrency();
   Runner runner(width, height, aspect_ratio, nThread, std::cref(objects));
 
-  // Create the main window
-  sf::RenderWindow window(sf::VideoMode(width, height), "raytracer");
-  window.setFramerateLimit(60);
-  int col = 0;
-  int row = 0;
-  sf::Clock clock;
-  while (window.isOpen()) {
-    // Process events
-    sf::Event event;
-    while (window.pollEvent(event)) {
-      // Close window: exit
-      if (event.type == sf::Event::Closed)
-        window.close();
-    }
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
-      window.close();
-    }
-
-    if (clock.getElapsedTime().asMilliseconds() > 5) {
-      clock.restart();
-
-      // Clear screen
-      window.clear();
-
-      if (col >= width) {
-        col = 0;
-      }
-      if (row >= height) {
-        row = 0;
-      }
-
-      sf::RectangleShape pixel({1, 1});
-      for (int row_adder = 0; row_adder <= 100; ++row_adder) {
-        pixel.setPosition(col, row + row_adder);
-        window.draw(pixel);
-      }
-
-      ++col;
-      ++row;
-    }
-
-    // Update the window
-    window.display();
+  for (unsigned int n = 0; n < nThread; ++n) {
+    std::cout << "spinning up thread " << n << '\n';
+    futures.emplace_back(std::async(std::launch::async, &Runner::run,
+                                    std::reference_wrapper(runner), n));
   }
-
-  // for (unsigned int n = 0; n < nThread; ++n) {
-  //   std::cout << "spinning up thread " << n << '\n';
-  //   futures.emplace_back(std::async(std::launch::async, &Runner::run,
-  //                                   std::reference_wrapper(runner), n));
-  // }
 
   // for (const std::future<void> &future : futures) {
   //   std::cout << "waiting for a future..." << std::endl;
   //   future.wait();
   // }
 
-  // TODO: re-enable some sort of logging
-  // i and j represent one pixel each along the +x and +y axes, respectively.
-  // for (int j = 0; j < height; ++j) {
-  //   for (int i = 0; i < width; ++i) {
-  //     std::stringstream sstream;
-  //     sstream << (float)j / height * 100 << "% complete";
-  //     logger.push(sstream.str());
-  //     logger.print_log();
-  //   }
-  // }
+  // Create the main window
+  sf::RenderWindow window(sf::VideoMode(width, height), "raytracer");
+  window.setFramerateLimit(60);
+  while (window.isOpen()) {
+    // Process events
+    sf::Event event;
+    while (window.pollEvent(event)) {
+      // Close window: exit
+      if (event.type == sf::Event::Closed) {
+        window.close();
+      }
+    }
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
+      window.close();
+    }
+
+    // Clear screen
+    window.clear();
+    for (int row = 0; row < height; ++row) {
+      for (int col = 0; col < width; ++col) {
+        sf::RectangleShape pixel({1, 1});
+        pixel.setPosition(col, row);
+        rtiaw::Color color = runner.buffer().pixel_color(row, col);
+        pixel.setFillColor({static_cast<sf::Uint8>(color.red),
+                            static_cast<sf::Uint8>(color.green),
+                            static_cast<sf::Uint8>(color.blue)});
+        window.draw(pixel);
+      }
+    }
+
+    // Update the window
+    window.display();
+
+    // TODO: re-enable some sort of logging
+    // i and j represent one pixel each along the +x and +y axes, respectively.
+    // for (int j = 0; j < height; ++j) {
+    //   for (int i = 0; i < width; ++i) {
+    //     std::stringstream sstream;
+    //     sstream << (float)j / height * 100 << "% complete";
+    //     logger.push(sstream.str());
+    //     logger.print_log();
+    //   }
+    // }
+  }
 }
