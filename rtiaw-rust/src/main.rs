@@ -6,40 +6,65 @@ use winit::{
     window::WindowBuilder,
 };
 
-fn main() {
-    // Define some constants
-    let window_height: u32 = 711;
-    let aspect_ratio: f32 = 16.0 / 9.0;
-    let window_width: u32 = (window_height as f32 * aspect_ratio) as u32;
+struct Color {
+    red: u8,
+    green: u8,
+    blue: u8,
+}
 
+impl Color {
+    fn to_bytes(&self) -> u32 {
+        self.blue as u32 | ((self.green as u32) << 8) | ((self.red as u32) << 16)
+    }
+}
+
+// Per the Softbuffer requirements[1], each pixel is represented by 32 bits
+// [1]: https://docs.rs/softbuffer/latest/softbuffer/struct.GraphicsContext.html#method.set_buffer
+struct Framebuffer {
+    pixels: Vec<u32>,
+}
+
+impl Framebuffer {
+    fn new(width: usize, height: usize) -> Framebuffer {
+        let background = Color {
+            red: 175 as u8,
+            green: 175 as u8,
+            blue: 230 as u8,
+        };
+
+        let mut buffer = Framebuffer { pixels: Vec::new() };
+
+        buffer.pixels = Vec::with_capacity(width * height);
+        buffer.pixels.resize(width * height, background.to_bytes());
+
+        buffer
+    }
+}
+
+const WINDOW_HEIGHT: u32 = 711;
+const ASECT_RATIO: f32 = 16.0 / 9.0;
+const WINDOW_WIDTH: u32 = (WINDOW_HEIGHT as f32 * ASECT_RATIO) as u32;
+
+fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_resizable(false)
-        .with_inner_size(PhysicalSize::new(window_width, window_height))
+        .with_inner_size(PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
         .build(&event_loop)
         .unwrap();
     let mut graphics_context = unsafe { GraphicsContext::new(window) }.unwrap();
+    let buffer = Framebuffer::new(WINDOW_WIDTH as usize, WINDOW_HEIGHT as usize);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
         match event {
             Event::RedrawRequested(window_id) if window_id == graphics_context.window().id() => {
-                let buffer = (0..((window_width * window_height) as usize))
-                    .map(|index| {
-                        let y = index / (window_width as usize);
-                        let x = index % (window_width as usize);
-                        let red = x % 255;
-                        let green = y % 255;
-                        let blue = (x * y) % 255;
-
-                        let color = blue | (green << 8) | (red << 16);
-
-                        color as u32
-                    })
-                    .collect::<Vec<_>>();
-
-                graphics_context.set_buffer(&buffer, window_width as u16, window_height as u16);
+                graphics_context.set_buffer(
+                    &buffer.pixels,
+                    WINDOW_WIDTH as u16,
+                    WINDOW_HEIGHT as u16,
+                );
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
