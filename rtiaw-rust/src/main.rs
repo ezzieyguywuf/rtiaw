@@ -1,6 +1,8 @@
 use rand::prelude::*;
 use softbuffer::GraphicsContext;
-use std::time::Instant;
+use std::error::Error;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -67,44 +69,60 @@ const WINDOW_HEIGHT: u32 = 711;
 const ASECT_RATIO: f32 = 16.0 / 9.0;
 const WINDOW_WIDTH: u32 = (WINDOW_HEIGHT as f32 * ASECT_RATIO) as u32;
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_resizable(false)
         .with_inner_size(PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
-        .build(&event_loop)
-        .unwrap();
-    let mut graphics_context = unsafe { GraphicsContext::new(window) }.unwrap();
-    let mut buffer = Framebuffer::new(WINDOW_WIDTH as usize, WINDOW_HEIGHT as usize);
-    let mut col = 0;
-    let mut rng = rand::thread_rng();
-    let mut clock = Instant::now();
+        .build(&event_loop)?;
+    let mut graphics_context = unsafe { GraphicsContext::new(window) }?;
+    let buffer = Framebuffer::new(WINDOW_WIDTH as usize, WINDOW_HEIGHT as usize);
+    let lock = Arc::new(Mutex::new(buffer));
+
+    let n_thread = match std::thread::available_parallelism()?.get() {
+        1 => 1,
+        x => x - 1,
+    };
+    let chunk_size: usize = WINDOW_WIDTH as usize / n_thread;
+    let mut children = Vec::new();
+
+    for n in 0..n_thread {
+        let lock = Arc::clone(&lock);
+        let lower: usize = n * chunk_size;
+        let upper = if n == n_thread - 1 {
+            WINDOW_WIDTH as usize - 1
+        } else {
+            lower + chunk_size
+        };
+
+        let child = thread::spawn(move || {
+            let mut rng = rand::thread_rng();
+            let red: u8 = rng.gen_range(0..255);
+            let green: u8 = rng.gen_range(0..255);
+            let blue: u8 = rng.gen_range(0..255);
+            for col in lower..upper {
+                for row in 0..WINDOW_HEIGHT - 1 {
+                    let pixel = Pixel {
+                        color: Color { red, green, blue },
+                        location: Position {
+                            row: row as usize,
+                            col: col as usize,
+                        },
+                    };
+                    lock.lock().unwrap().set(&pixel);
+                }
+            }
+        });
+        children.push(child);
+    }
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
-        let red: u8 = rng.gen_range(0..255);
-        let green: u8 = rng.gen_range(0..255);
-        let blue: u8 = rng.gen_range(0..255);
-        for row in 0..WINDOW_HEIGHT {
-            buffer.set(&Pixel {
-                color: Color { red, green, blue },
-                location: Position {
-                    row: row as usize,
-                    col: col as usize,
-                },
-            })
-        }
-        col += 1;
-        if col >= WINDOW_WIDTH {
-            col = 0;
-        }
-
-        clock = Instant::now();
         match event {
             Event::RedrawRequested(window_id) if window_id == graphics_context.window().id() => {
                 graphics_context.set_buffer(
-                    &buffer.pixels,
+                    &lock.lock().unwrap().pixels,
                     WINDOW_WIDTH as u16,
                     WINDOW_HEIGHT as u16,
                 );
