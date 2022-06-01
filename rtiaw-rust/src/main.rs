@@ -1,7 +1,7 @@
 use rand::prelude::*;
 use softbuffer::GraphicsContext;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 use std::thread;
 use winit::{
     dpi::PhysicalSize,
@@ -76,9 +76,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_inner_size(PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
         .build(&event_loop)?;
     let mut graphics_context = unsafe { GraphicsContext::new(window) }?;
-    let buffer = Framebuffer::new(WINDOW_WIDTH as usize, WINDOW_HEIGHT as usize);
-    let lock = Arc::new(Mutex::new(buffer));
+    let mut buffer = Framebuffer::new(WINDOW_WIDTH as usize, WINDOW_HEIGHT as usize);
 
+    let (tx, rx) = mpsc::channel();
     let n_thread = match std::thread::available_parallelism()?.get() {
         1 => 1,
         x => x - 1,
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut children = Vec::new();
 
     for n in 0..n_thread {
-        let lock = Arc::clone(&lock);
+        let tx_clone = tx.clone();
         let lower: usize = n * chunk_size;
         let upper = if n == n_thread - 1 {
             WINDOW_WIDTH as usize - 1
@@ -100,8 +100,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             let red: u8 = rng.gen_range(0..255);
             let green: u8 = rng.gen_range(0..255);
             let blue: u8 = rng.gen_range(0..255);
-            for col in lower..upper {
-                for row in 0..WINDOW_HEIGHT - 1 {
+            for row in 0..WINDOW_HEIGHT - 1 {
+                let mut pixels = Vec::new();
+                for col in lower..upper {
                     let pixel = Pixel {
                         color: Color { red, green, blue },
                         location: Position {
@@ -109,8 +110,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                             col: col as usize,
                         },
                     };
-                    lock.lock().unwrap().set(&pixel);
+                    pixels.push(pixel);
                 }
+                tx_clone.send(pixels).unwrap();
             }
         });
         children.push(child);
@@ -119,10 +121,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
+        match rx.try_recv() {
+            Ok(pixels) => {
+                for pixel in pixels {
+                    buffer.set(&pixel);
+                }
+            }
+            Err(_) => {}
+        }
         match event {
             Event::RedrawRequested(window_id) if window_id == graphics_context.window().id() => {
                 graphics_context.set_buffer(
-                    &lock.lock().unwrap().pixels,
+                    &buffer.pixels,
                     WINDOW_WIDTH as u16,
                     WINDOW_HEIGHT as u16,
                 );
