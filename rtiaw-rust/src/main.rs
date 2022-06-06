@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         match rx.try_recv() {
             Ok(pixels) => {
                 for pixel in pixels {
-                    buffer.set(&pixel);
+                    buffer.set(pixel);
                 }
             }
             Err(_) => {}
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         match event {
             Event::RedrawRequested(window_id) if window_id == graphics_context.window().id() => {
                 graphics_context.set_buffer(
-                    &buffer.pixels,
+                    &buffer.pixel_bytes,
                     WINDOW_WIDTH as u16,
                     WINDOW_HEIGHT as u16,
                 );
@@ -84,7 +84,7 @@ struct Pixel {
 // Per the Softbuffer requirements[1], each pixel is represented by 32 bits
 // [1]: https://docs.rs/softbuffer/latest/softbuffer/struct.GraphicsContext.html#method.set_buffer
 struct Framebuffer {
-    pixels: Vec<u32>,
+    pixel_bytes: Vec<u32>,
     width: usize,
 }
 
@@ -97,19 +97,19 @@ impl Framebuffer {
         };
 
         let mut buffer = Framebuffer {
-            pixels: Vec::new(),
+            pixel_bytes: Vec::new(),
             width,
         };
 
-        buffer.pixels = Vec::with_capacity(width * height);
-        buffer.pixels.resize(width * height, background.to_bytes());
+        buffer.pixel_bytes = Vec::with_capacity(width * height);
+        buffer.pixel_bytes.resize(width * height, background.to_bytes());
 
         buffer
     }
 
-    fn set(&mut self, pixel: &Pixel) {
+    fn set(&mut self, pixel: Pixel) {
         let i = pixel.location.row * self.width + pixel.location.col;
-        self.pixels[i] = pixel.color.to_bytes();
+        self.pixel_bytes[i] = pixel.color.to_bytes();
     }
 }
 
