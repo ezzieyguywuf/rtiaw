@@ -10,61 +10,6 @@ use winit::{
     window::WindowBuilder,
 };
 
-struct Color {
-    red: u8,
-    green: u8,
-    blue: u8,
-}
-
-impl Color {
-    fn to_bytes(&self) -> u32 {
-        self.blue as u32 | ((self.green as u32) << 8) | ((self.red as u32) << 16)
-    }
-}
-
-// Top-left is row = 0, col = 0
-struct Position {
-    row: usize,
-    col: usize,
-}
-
-struct Pixel {
-    color: Color,
-    location: Position,
-}
-
-// Per the Softbuffer requirements[1], each pixel is represented by 32 bits
-// [1]: https://docs.rs/softbuffer/latest/softbuffer/struct.GraphicsContext.html#method.set_buffer
-struct Framebuffer {
-    pixels: Vec<u32>,
-    width: usize,
-}
-
-impl Framebuffer {
-    fn new(width: usize, height: usize) -> Framebuffer {
-        let background = Color {
-            red: 175 as u8,
-            green: 175 as u8,
-            blue: 230 as u8,
-        };
-
-        let mut buffer = Framebuffer {
-            pixels: Vec::new(),
-            width,
-        };
-
-        buffer.pixels = Vec::with_capacity(width * height);
-        buffer.pixels.resize(width * height, background.to_bytes());
-
-        buffer
-    }
-
-    fn set(&mut self, pixel: &Pixel) {
-        let i = pixel.location.row * self.width + pixel.location.col;
-        self.pixels[i] = pixel.color.to_bytes();
-    }
-}
-
 const WINDOW_HEIGHT: u32 = 711;
 const ASECT_RATIO: f32 = 16.0 / 9.0;
 const WINDOW_WIDTH: u32 = (WINDOW_HEIGHT as f32 * ASECT_RATIO) as u32;
@@ -149,4 +94,59 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => {}
         }
     });
+}
+
+struct Color {
+    red: u8,
+    green: u8,
+    blue: u8,
+}
+
+impl Color {
+    fn to_bytes(&self) -> u32 {
+        self.blue as u32 | ((self.green as u32) << 8) | ((self.red as u32) << 16)
+    }
+}
+
+// Top-left is row = 0, col = 0
+struct Position {
+    row: usize,
+    col: usize,
+}
+
+struct Pixel {
+    color: Color,
+    location: Position,
+}
+
+// Per the Softbuffer requirements[1], each pixel is represented by 32 bits
+// [1]: https://docs.rs/softbuffer/latest/softbuffer/struct.GraphicsContext.html#method.set_buffer
+struct Framebuffer {
+    pixels: Vec<u32>,
+    width: usize,
+}
+
+impl Framebuffer {
+    fn new(width: usize, height: usize) -> Framebuffer {
+        let background = Color {
+            red: 175 as u8,
+            green: 175 as u8,
+            blue: 230 as u8,
+        };
+
+        let mut buffer = Framebuffer {
+            pixels: Vec::new(),
+            width,
+        };
+
+        buffer.pixels = Vec::with_capacity(width * height);
+        buffer.pixels.resize(width * height, background.to_bytes());
+
+        buffer
+    }
+
+    fn set(&mut self, pixel: &Pixel) {
+        let i = pixel.location.row * self.width + pixel.location.col;
+        self.pixels[i] = pixel.color.to_bytes();
+    }
 }
