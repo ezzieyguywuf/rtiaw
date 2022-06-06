@@ -23,45 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut graphics_context = unsafe { GraphicsContext::new(window) }?;
     let mut buffer = Framebuffer::new(WINDOW_WIDTH as usize, WINDOW_HEIGHT as usize);
 
-    let (tx, rx) = mpsc::channel();
-    let n_thread = match std::thread::available_parallelism()?.get() {
-        1 => 1,
-        x => x - 1,
-    };
-    let chunk_size: usize = WINDOW_WIDTH as usize / n_thread;
-    let mut children = Vec::new();
-
-    for n in 0..n_thread {
-        let tx_clone = tx.clone();
-        let lower: usize = n * chunk_size;
-        let upper = if n == n_thread - 1 {
-            WINDOW_WIDTH as usize - 1
-        } else {
-            lower + chunk_size
-        };
-
-        let child = thread::spawn(move || {
-            let mut rng = rand::thread_rng();
-            let red: u8 = rng.gen_range(0..255);
-            let green: u8 = rng.gen_range(0..255);
-            let blue: u8 = rng.gen_range(0..255);
-            for row in 0..WINDOW_HEIGHT - 1 {
-                let mut pixels = Vec::new();
-                for col in lower..upper {
-                    let pixel = Pixel {
-                        color: Color { red, green, blue },
-                        location: Position {
-                            row: row as usize,
-                            col: col as usize,
-                        },
-                    };
-                    pixels.push(pixel);
-                }
-                tx_clone.send(pixels).unwrap();
-            }
-        });
-        children.push(child);
-    }
+    let (rx, _) = launch_threads()?;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -149,4 +111,50 @@ impl Framebuffer {
         let i = pixel.location.row * self.width + pixel.location.col;
         self.pixels[i] = pixel.color.to_bytes();
     }
+}
+
+fn launch_threads(
+) -> Result<(mpsc::Receiver<Vec<Pixel>>, Vec<thread::JoinHandle<()>>), Box<dyn Error>> {
+    let n_thread = match std::thread::available_parallelism()?.get() {
+        1 => 1,
+        x => x - 1,
+    };
+    let (tx, rx) = mpsc::channel();
+    let chunk_size: usize = WINDOW_WIDTH as usize / n_thread;
+
+    let mut children = Vec::new();
+
+    for n in 0..n_thread {
+        let tx_clone = tx.clone();
+        let lower: usize = n * chunk_size;
+        let upper = if n == n_thread - 1 {
+            WINDOW_WIDTH as usize - 1
+        } else {
+            lower + chunk_size
+        };
+
+        let child = thread::spawn(move || {
+            let mut rng = rand::thread_rng();
+            let red: u8 = rng.gen_range(0..255);
+            let green: u8 = rng.gen_range(0..255);
+            let blue: u8 = rng.gen_range(0..255);
+            for row in 0..WINDOW_HEIGHT - 1 {
+                let mut pixels = Vec::new();
+                for col in lower..upper {
+                    let pixel = Pixel {
+                        color: Color { red, green, blue },
+                        location: Position {
+                            row: row as usize,
+                            col: col as usize,
+                        },
+                    };
+                    pixels.push(pixel);
+                }
+                tx_clone.send(pixels).unwrap();
+            }
+        });
+        children.push(child);
+    }
+
+    Ok((rx, children))
 }
