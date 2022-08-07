@@ -84,14 +84,14 @@ impl Color {
 }
 
 // Top-left is row = 0, col = 0
-struct Position {
+struct PixelPosition {
     row: usize,
     col: usize,
 }
 
 struct Pixel {
     color: Color,
-    location: Position,
+    location: PixelPosition,
 }
 
 // Per the Softbuffer requirements[1], each pixel is represented by 32 bits
@@ -158,7 +158,7 @@ fn launch_threads(
                 for col in lower..upper {
                     let pixel = Pixel {
                         color: Color { red, green, blue },
-                        location: Position {
+                        location: PixelPosition {
                             row: row as usize,
                             col: col as usize,
                         },
