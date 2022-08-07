@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use std::thread;
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, WindowEvent},
+    event::{ElementState, Event, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
@@ -51,6 +51,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 event: WindowEvent::CloseRequested,
                 window_id,
             } if window_id == graphics_context.window().id() => {
+                *control_flow = ControlFlow::Exit;
+            }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        device_id: _,
+                        input,
+                        is_synthetic: _,
+                    },
+                window_id: _,
+            } if input.state == ElementState::Pressed
+                && input.virtual_keycode == Some(VirtualKeyCode::Q) =>
+            {
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
@@ -102,7 +115,9 @@ impl Framebuffer {
         };
 
         buffer.pixel_bytes = Vec::with_capacity(width * height);
-        buffer.pixel_bytes.resize(width * height, background.to_bytes());
+        buffer
+            .pixel_bytes
+            .resize(width * height, background.to_bytes());
 
         buffer
     }
