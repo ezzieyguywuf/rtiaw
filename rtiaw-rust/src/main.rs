@@ -143,7 +143,7 @@ fn launch_threads(
         let tx_clone = tx.clone();
         let lower: usize = n * chunk_size;
         let upper = if n == n_thread - 1 {
-            WINDOW_WIDTH as usize - 1
+            WINDOW_WIDTH as usize
         } else {
             lower + chunk_size
         };
@@ -153,7 +153,7 @@ fn launch_threads(
             let red: u8 = rng.gen_range(0..255);
             let green: u8 = rng.gen_range(0..255);
             let blue: u8 = rng.gen_range(0..255);
-            for row in 0..WINDOW_HEIGHT - 1 {
+            for row in 0..WINDOW_HEIGHT {
                 let mut pixels = Vec::new();
                 for col in lower..upper {
                     let pixel = Pixel {
